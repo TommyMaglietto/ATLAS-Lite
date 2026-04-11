@@ -140,7 +140,7 @@ def update_local_state(local_state, reconciliation_report):
 
 def save_state(state, state_file='state/positions.json'):
     """
-    Save state atomically.
+    Save state atomically using write-to-temp-then-rename pattern.
 
     Args:
         state (dict): State to save
@@ -149,14 +149,8 @@ def save_state(state, state_file='state/positions.json'):
     Returns:
         bool: Success
     """
-    try:
-        Path(state_file).parent.mkdir(parents=True, exist_ok=True)
-        with open(state_file, 'w') as f:
-            json.dump(state, f, indent=2)
-        return True
-    except Exception as e:
-        print(f"ERROR: Failed to save state: {e}", file=sys.stderr)
-        return False
+    from scripts.atomic_write import atomic_write_json
+    return atomic_write_json(state_file, state)
 
 
 def main():

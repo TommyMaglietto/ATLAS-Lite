@@ -1,14 +1,60 @@
 {
   "schema_version": "1.0.0",
-  "current_regime": "UNKNOWN",
-  "last_updated": null,
+  "current_regime": "RISK_ON",
+  "last_updated": "2026-04-11T18:28:37.859359+00:00",
   "signals": {
-    "trend_score": 0,
-    "volatility_score": 0,
-    "breadth_score": 0,
-    "credit_score": 0,
-    "momentum_score": 0
+    "trend_score": 1.0,
+    "volatility_score": 1.0,
+    "breadth_score": 0.0,
+    "credit_score": 0.0,
+    "momentum_score": 1.0
   },
-  "composite_score": 0,
-  "regime_history": []
+  "signal_details": {
+    "trend": {
+      "sma50": 674.26,
+      "sma200": 664.35,
+      "pct_diff": 1.492,
+      "interpretation": "golden cross"
+    },
+    "volatility": {
+      "current_price": 29.76,
+      "sma20": 33.33,
+      "pct_vs_avg": -10.72,
+      "slope_5d": -0.033291,
+      "interpretation": "low fear"
+    },
+    "breadth": {
+      "ratio_start": 0.2922,
+      "ratio_end": 0.2895,
+      "slope_20d": 5.6e-05,
+      "interpretation": "flat"
+    },
+    "credit": {
+      "ratio_start": 0.7324,
+      "ratio_end": 0.7322,
+      "slope_20d": 3.3e-05,
+      "interpretation": "neutral"
+    },
+    "momentum": {
+      "ratio_start": 0.3723,
+      "ratio_end": 0.3846,
+      "slope_20d": 0.001943,
+      "interpretation": "risk appetite strong"
+    }
+  },
+  "composite_score": 0.65,
+  "weights": {
+    "trend": 0.3,
+    "volatility": 0.25,
+    "breadth": 0.2,
+    "credit": 0.15,
+    "momentum": 0.1
+  },
+  "regime_history": [
+    {
+      "timestamp": "2026-04-11T18:28:37.859359+00:00",
+      "regime": "RISK_ON",
+      "composite": 0.65
+    }
+  ]
 }

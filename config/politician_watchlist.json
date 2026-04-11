@@ -1,11 +1,129 @@
 {
-  "tracked_politicians": [],
+  "tracked_politicians": [
+    {
+      "name": "Ro Khanna",
+      "party": "D",
+      "chamber": "House",
+      "state": "CA",
+      "selected_date": "2026-04-11",
+      "priority": "primary",
+      "reason": "Most active trader in Congress last 90 days: 200 trades (96 buys, 104 sells) across 40+ unique publicly traded symbols. Trades exclusively listed equities (no private LLCs). Recent large buy wave on 30 Mar 2026 spanning mega-cap tech, financials, healthcare, industrials. Best copy-trade signal: high frequency, wide diversification, actionable tickers.",
+      "stats_90d": {
+        "total_trades": 200,
+        "buys": 96,
+        "sells": 104,
+        "buy_sell_ratio": 0.92
+      },
+      "recent_buys": [
+        {"symbol": "GOOGL", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "AMZN", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "TSLA", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "JPM", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "CRM", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "ORCL", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "PANW", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "KKR", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "AVGO", "date": "2026-03-06", "size": "1K-15K"},
+        {"symbol": "WFC", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "MCD", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "KO", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "BSX", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "DIS", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "CSCO", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "INTU", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "SPGI", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "AXP", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "COF", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "MCO", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "BX", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "LOW", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "PGR", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "ADSK", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "ACN", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "IDXX", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "PRU", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "ADP", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "PG", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "TFC", "date": "2026-03-30", "size": "15K-50K"},
+        {"symbol": "UNH", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "TMO", "date": "2026-03-06", "size": "1K-15K"},
+        {"symbol": "ROK", "date": "2026-03-06", "size": "1K-15K"},
+        {"symbol": "JNJ", "date": "2026-03-06", "size": "1K-15K"},
+        {"symbol": "LULU", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "VRT", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "MLM", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "INCY", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "PPG", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "HLT", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "MDLZ", "date": "2026-03-30", "size": "1K-15K"},
+        {"symbol": "BMO", "date": "2026-03-16", "size": "1K-15K"},
+        {"symbol": "KEY", "date": "2026-03-12", "size": "1K-15K"},
+        {"symbol": "FHN", "date": "2026-03-05", "size": "1K-15K"},
+        {"symbol": "RCI", "date": "2026-03-24", "size": "1K-15K"},
+        {"symbol": "NTIOF", "date": "2026-03-03", "size": "50K-100K"}
+      ]
+    },
+    {
+      "name": "Nancy Pelosi",
+      "party": "D",
+      "chamber": "House",
+      "state": "CA",
+      "selected_date": "2026-04-11",
+      "priority": "confirmation",
+      "reason": "High-conviction signal: 6 trades all BUYS in last 90 days, large position sizes ($250K-$5M), focused on mega-cap tech and AI. Historically one of the best-performing congressional traders. Used as confirmation signal when her picks overlap with primary.",
+      "stats_90d": {
+        "total_trades": 6,
+        "buys": 6,
+        "sells": 0,
+        "buy_sell_ratio": 6.0
+      },
+      "recent_buys": [
+        {"symbol": "AB", "date": "2026-01-16", "size": "1M-5M"},
+        {"symbol": "GOOGL", "date": "2026-01-16", "size": "500K-1M"},
+        {"symbol": "AMZN", "date": "2026-01-16", "size": "500K-1M"},
+        {"symbol": "NVDA", "date": "2026-01-16", "size": "250K-500K"},
+        {"symbol": "VST", "date": "2026-01-16", "size": "100K-250K"},
+        {"symbol": "TEM", "date": "2026-01-16", "size": "50K-100K"}
+      ]
+    },
+    {
+      "name": "Rich McCormick",
+      "party": "R",
+      "chamber": "House",
+      "state": "GA",
+      "selected_date": "2026-04-11",
+      "priority": "bipartisan_confirmation",
+      "reason": "Most active Republican stock trader last 90 days with ~18 trades in listed equities (MSFT, UNH, HD, BLK, ABT, MGK). Provides bipartisan signal coverage per selection criteria. Active buy-side in tech (MSFT) and healthcare (UNH).",
+      "stats_90d": {
+        "total_trades": 18,
+        "buys": 10,
+        "sells": 8,
+        "buy_sell_ratio": 1.25
+      },
+      "recent_buys": [
+        {"symbol": "MSFT", "date": "2026-03-19", "size": "1K-15K"},
+        {"symbol": "UNH", "date": "2026-03-19", "size": "1K-15K"},
+        {"symbol": "HD", "date": "2026-03-19", "size": "1K-15K"},
+        {"symbol": "BLK", "date": "2026-03-19", "size": "1K-15K"},
+        {"symbol": "ABT", "date": "2026-03-19", "size": "1K-15K"},
+        {"symbol": "ADP", "date": "2026-03-19", "size": "1K-15K"},
+        {"symbol": "MGK", "date": "2026-03-19", "size": "1K-15K"}
+      ]
+    }
+  ],
   "selection_criteria": {
     "min_trades_last_90_days": 5,
     "min_win_rate": 0.55,
     "prefer_active_traders": true,
-    "prefer_bipartisan_signals": true
+    "prefer_bipartisan_signals": true,
+    "require_public_tickers": true,
+    "exclude_private_llcs": true
   },
+  "bipartisan_overlap_symbols": ["UNH", "ADP", "GOOGL", "AMZN"],
+  "buy_momentum_symbols": ["MCD", "KO", "UNH", "AMZN", "CRM", "KKR", "AJG", "SQ", "ACI", "GOOGL", "BSX", "SPGI", "WFC"],
   "auto_select": true,
-  "auto_select_method": "Use Capitol Trades get_politician_stats to find the most active, highest-performing politician in the last 90 days"
+  "auto_select_method": "Capitol Trades MCP: get_politician_stats(90d) ranked by total_trades with public tickers, filtered for min 5 trades, cross-referenced with get_buy_momentum_assets for confirmation. Primary = highest trade count with ticker diversity. Secondary = highest conviction (buy_sell_ratio). Bipartisan = top Republican by same criteria.",
+  "last_updated": "2026-04-11",
+  "next_review": "2026-04-18",
+  "data_source": "Capitol Trades MCP (capitoltrades.com)"
 }

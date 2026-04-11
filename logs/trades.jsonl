@@ -1,0 +1,2 @@
+{"timestamp": "2026-04-11T18:23:45.456504+00:00", "event": "connection_test", "account_status": "AccountStatus.ACTIVE", "equity": 100000.0, "buying_power": 200000.0, "cash": 100000.0, "market_open": false, "aapl_mid": 259.93, "order_test_passed": false, "paper": true}
+{"timestamp": "2026-04-11T18:24:09.717639+00:00", "event": "connection_test", "account_status": "AccountStatus.ACTIVE", "equity": 100000.0, "buying_power": 200000.0, "cash": 100000.0, "market_open": false, "aapl_mid": 259.93, "order_test_passed": true, "paper": true}
