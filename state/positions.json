@@ -1,13 +1,78 @@
 {
   "schema_version": "1.0.0",
-  "last_reconciled": "2026-04-11T14:14:18.932598",
-  "positions": [],
-  "pending_orders": [],
+  "last_reconciled": "2026-04-11T18:31:23.997024+00:00",
+  "positions": [
+    {
+      "symbol": "BTC/USD",
+      "asset_class": "crypto",
+      "strategy": "TRAILING_STOP",
+      "qty": 0.204255391,
+      "entry_price": 73309.34,
+      "current_price": 73227.60,
+      "market_value": 14957.13,
+      "cost_basis": 14973.83,
+      "unrealized_pnl": -16.70,
+      "order_id": "f1bb4ba7-f634-4ee6-ad8e-65f878be3809",
+      "opened_at": "2026-04-11T18:31:23.997024+00:00"
+    },
+    {
+      "symbol": "ETH/USD",
+      "asset_class": "crypto",
+      "strategy": "TRAILING_STOP",
+      "qty": 6.603919313,
+      "entry_price": 2267.95,
+      "current_price": 2265.40,
+      "market_value": 14960.52,
+      "cost_basis": 14977.37,
+      "unrealized_pnl": -16.85,
+      "order_id": "4f2ac8fb-0652-48b7-ad15-ee5056bb4bfe",
+      "opened_at": "2026-04-11T18:31:23.997024+00:00"
+    }
+  ],
+  "pending_orders": [
+    {
+      "symbol": "AMZN",
+      "asset_class": "equity",
+      "strategy": "TRAILING_STOP",
+      "qty": 41,
+      "limit_price": 238.42,
+      "order_type": "limit",
+      "order_id": "77fcd12a-fd4e-43e8-a02d-531b57be320d",
+      "status": "ACCEPTED",
+      "estimated_value": 9775.22,
+      "placed_at": "2026-04-11T18:31:23.997024+00:00"
+    },
+    {
+      "symbol": "NVDA",
+      "asset_class": "equity",
+      "strategy": "TRAILING_STOP",
+      "qty": 53,
+      "limit_price": 188.61,
+      "order_type": "limit",
+      "order_id": "bee588dd-4402-4575-b46d-2d1a38ed39a5",
+      "status": "ACCEPTED",
+      "estimated_value": 9996.33,
+      "placed_at": "2026-04-11T18:31:23.997024+00:00"
+    },
+    {
+      "symbol": "AAPL",
+      "asset_class": "equity",
+      "strategy": "TRAILING_STOP",
+      "qty": 38,
+      "limit_price": 260.43,
+      "order_type": "limit",
+      "order_id": "61562020-d562-46c1-90be-131e59886513",
+      "status": "ACCEPTED",
+      "estimated_value": 9896.34,
+      "placed_at": "2026-04-11T18:31:23.997024+00:00"
+    }
+  ],
   "totals": {
-    "total_positions": 0,
-    "total_value": 0,
-    "cash_available": 100000,
-    "cash_reserved_pct": 100,
-    "deployed_pct": 0
+    "total_positions": 2,
+    "total_pending": 3,
+    "total_value": 59585.54,
+    "cash_available": 40414.46,
+    "cash_reserved_pct": 40.4,
+    "deployed_pct": 59.6
   }
 }
