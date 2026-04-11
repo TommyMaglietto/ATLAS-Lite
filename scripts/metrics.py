@@ -43,11 +43,18 @@ def filter_trades_by_days(trades, days=5):
     Returns:
         list: Filtered trades
     """
-    cutoff = datetime.now() - timedelta(days=days)
-    return [
-        t for t in trades
-        if datetime.fromisoformat(t.get('timestamp', '2000-01-01')) >= cutoff
-    ]
+    cutoff = datetime.now().astimezone() - timedelta(days=days)
+    filtered = []
+    for t in trades:
+        ts_str = t.get('timestamp', '2000-01-01')
+        ts = datetime.fromisoformat(ts_str)
+        # Make offset-naive timestamps timezone-aware (assume UTC)
+        if ts.tzinfo is None:
+            from datetime import timezone
+            ts = ts.replace(tzinfo=timezone.utc)
+        if ts >= cutoff:
+            filtered.append(t)
+    return filtered
 
 
 def calculate_sharpe(trades, risk_free_rate=0.02):
