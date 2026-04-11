@@ -1,0 +1,11 @@
+{
+  "tracked_politicians": [],
+  "selection_criteria": {
+    "min_trades_last_90_days": 5,
+    "min_win_rate": 0.55,
+    "prefer_active_traders": true,
+    "prefer_bipartisan_signals": true
+  },
+  "auto_select": true,
+  "auto_select_method": "Use Capitol Trades get_politician_stats to find the most active, highest-performing politician in the last 90 days"
+}

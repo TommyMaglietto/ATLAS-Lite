@@ -1,0 +1,86 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2026-04-11T00:00:00Z",
+  "trailing_stop": {
+    "enabled": true,
+    "loss_pct": 5.0,
+    "loss_pct_bounds": [3.0, 15.0],
+    "trail_pct": 5.0,
+    "trail_pct_bounds": [2.0, 10.0],
+    "ladder_buy_enabled": true,
+    "ladder_levels": [
+      { "drop_pct": 15, "shares": 10 },
+      { "drop_pct": 20, "shares": 20 },
+      { "drop_pct": 30, "shares": 50 }
+    ]
+  },
+  "wheel": {
+    "enabled": true,
+    "put_delta": 0.25,
+    "put_delta_bounds": [0.20, 0.35],
+    "call_delta": 0.25,
+    "call_delta_bounds": [0.20, 0.35],
+    "dte_min": 14,
+    "dte_max": 45,
+    "dte_target": 30,
+    "open_interest_min": 100,
+    "yield_min": 0.005,
+    "yield_max": 0.05,
+    "early_close_profit_pct": 50,
+    "max_contracts_per_symbol": 1,
+    "score_min": 0.5,
+    "scoring_formula": "(1 - abs(delta)) * (250 / (dte + 5)) * (bid / strike)"
+  },
+  "politician_copy": {
+    "enabled": true,
+    "max_position_pct": 5.0,
+    "staleness_threshold_days": 45,
+    "min_trade_size": "$1,001 - $15,000",
+    "replication_delay_max_days": 2,
+    "bipartisan_signal_bonus": true
+  },
+  "self_improvement": {
+    "enabled": true,
+    "eval_period_days": 5,
+    "min_trades_before_commit": 30,
+    "min_sharpe_improvement": 0.1,
+    "max_param_change_pct": 20,
+    "cooldown_between_experiments_hours": 24,
+    "walk_forward_train_days": 60,
+    "walk_forward_test_days": 20,
+    "schedule": "Sunday 8PM ET"
+  },
+  "regime_filter": {
+    "enabled": true,
+    "risk_on_threshold": 0.3,
+    "risk_off_threshold": -0.3,
+    "update_interval_min": 30,
+    "cautious_size_multiplier": 0.5,
+    "risk_off_exit_threshold_pct": -3.0,
+    "signal_weights": {
+      "trend": 0.30,
+      "volatility": 0.25,
+      "breadth": 0.20,
+      "credit": 0.15,
+      "momentum": 0.10
+    },
+    "proxy_etfs": {
+      "trend": "SPY",
+      "volatility": "VIXY",
+      "breadth_equal_weight": "RSP",
+      "breadth_cap_weight": "SPY",
+      "credit_high_yield": "HYG",
+      "credit_investment_grade": "LQD",
+      "momentum_small_cap": "IWM",
+      "momentum_large_cap": "SPY"
+    }
+  },
+  "risk": {
+    "max_position_pct_options": 5.0,
+    "max_position_pct_equity": 10.0,
+    "max_strategy_allocation_pct": 25.0,
+    "cash_reserve_pct": 20.0,
+    "max_drawdown_pct": 15.0,
+    "max_total_deployed_pct": 80.0
+  }
+}

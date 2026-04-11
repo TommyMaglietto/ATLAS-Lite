@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "tracked_politician": null,
+  "replicated_trades": [],
+  "pending_signals": [],
+  "performance": {
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "total_pnl": 0,
+    "win_rate": 0
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "last_reconciled": null,
+  "positions": [],
+  "pending_orders": [],
+  "totals": {
+    "total_positions": 0,
+    "total_value": 0,
+    "cash_available": 0,
+    "cash_reserved_pct": 100,
+    "deployed_pct": 0
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "current_regime": "UNKNOWN",
+  "last_updated": null,
+  "signals": {
+    "trend_score": 0,
+    "volatility_score": 0,
+    "breadth_score": 0,
+    "credit_score": 0,
+    "momentum_score": 0
+  },
+  "composite_score": 0,
+  "regime_history": []
+}

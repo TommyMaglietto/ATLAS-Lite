@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "current_experiment": null,
+  "completed_experiments": [],
+  "statistics": {
+    "total_experiments": 0,
+    "accepted": 0,
+    "rejected": 0,
+    "acceptance_rate": 0
+  }
+}

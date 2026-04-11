@@ -1,0 +1,10 @@
+{
+  "trailing_stop_watchlist": ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META"],
+  "wheel_candidates": ["AAPL", "MSFT", "AMD", "INTC", "F", "PLTR", "SOFI", "BAC", "T"],
+  "wheel_criteria": {
+    "min_market_cap_billions": 10,
+    "min_avg_volume": 1000000,
+    "min_options_open_interest": 100,
+    "prefer_stocks_you_want_to_own": true
+  }
+}
