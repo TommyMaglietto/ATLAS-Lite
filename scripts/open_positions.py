@@ -222,8 +222,8 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
-API_KEY    = os.environ.get("ALPACA_API_KEY",    "PKNG4F2EBQEA2GVWLJBSHLYLQW")
-SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "5q5T4NUp5f35MHoE8J5Bxxva8pYzyLTZPVFqiH7dYMRD")
+API_KEY = os.environ.get("ALPACA_API_KEY") or os.environ.get("APCA_API_KEY_ID", "")
+SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY") or os.environ.get("APCA_API_SECRET_KEY", "")
 
 client = TradingClient(API_KEY, SECRET_KEY, paper=True)
 

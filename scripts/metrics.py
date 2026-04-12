@@ -88,7 +88,9 @@ def calculate_sharpe(trades, risk_free_rate=0.02):
         return 0.0
 
     # Assuming ~252 trading days per year
-    sharpe = (mean_return / std_dev) * (252 ** 0.5) - risk_free_rate
+    # Subtract daily risk-free rate from daily returns BEFORE annualizing
+    risk_free_daily = risk_free_rate / 252
+    sharpe = ((mean_return - risk_free_daily) / std_dev) * (252 ** 0.5)
     return round(sharpe, 2)
 
 

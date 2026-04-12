@@ -12,6 +12,12 @@
       { "drop_pct": 15, "shares": 10 },
       { "drop_pct": 20, "shares": 20 },
       { "drop_pct": 30, "shares": 50 }
+    ],
+    "profit_taking_enabled": true,
+    "profit_tiers": [
+      { "gain_pct": 10, "sell_pct": 15 },
+      { "gain_pct": 20, "sell_pct": 20 },
+      { "gain_pct": 35, "sell_pct": 25 }
     ]
   },
   "wheel": {

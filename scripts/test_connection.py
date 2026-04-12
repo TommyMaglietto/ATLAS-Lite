@@ -20,8 +20,8 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # 1. Setup & connect
 # ---------------------------------------------------------------------------
-API_KEY    = os.environ.get("ALPACA_API_KEY",    "PKNG4F2EBQEA2GVWLJBSHLYLQW")
-SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "5q5T4NUp5f35MHoE8J5Bxxva8pYzyLTZPVFqiH7dYMRD")
+API_KEY = os.environ.get("ALPACA_API_KEY") or os.environ.get("APCA_API_KEY_ID", "")
+SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY") or os.environ.get("APCA_API_SECRET_KEY", "")
 PAPER      = True  # ALWAYS paper trading per CLAUDE.md rules
 
 print("=" * 64)

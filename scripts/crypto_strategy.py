@@ -38,8 +38,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from atomic_write import atomic_write_json, atomic_read_json
 
 # ---------- API credentials ----------
-API_KEY = os.environ.get("ALPACA_API_KEY", "PKNG4F2EBQEA2GVWLJBSHLYLQW")
-SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "5q5T4NUp5f35MHoE8J5Bxxva8pYzyLTZPVFqiH7dYMRD")
+API_KEY = os.environ.get("ALPACA_API_KEY") or os.environ.get("APCA_API_KEY_ID", "")
+SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY") or os.environ.get("APCA_API_SECRET_KEY", "")
 PAPER = True  # ALWAYS paper trading per ATLAS rules
 
 # ---------- strategy parameters ----------
@@ -74,9 +74,55 @@ DCA_AGGRESSIVE_RSI = 20
 DCA_NORMAL_SIZE_PCT = 0.01    # 1% of account
 DCA_AGGRESSIVE_SIZE_PCT = 0.02  # 2% at RSI<20
 
+# Stop loss
+STOP_ATR_MULTIPLIER = 2.0
+
 # Cash reserve
 CASH_RESERVE_PCT = 0.20
 ACCOUNT_VALUE_APPROX = 98952  # from current state
+
+
+def load_params():
+    """Load strategy parameters from config file (self-improvement can modify these)."""
+    config_file = CONFIG_DIR / "strategy_params.json"
+    config = atomic_read_json(str(config_file))
+
+    if config and "crypto_strategy" in config:
+        cs = config["crypto_strategy"]
+        return {
+            "watchlist": cs.get("watchlist", ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"]),
+            "position_size_usd": cs.get("position_size_usd", 2500),
+            "position_size_bounds": cs.get("position_size_bounds", [1000, 5000]),
+            "bb_period": cs.get("bb_period", 20),
+            "bb_std": cs.get("bb_std", 2.0),
+            "rsi_period": cs.get("rsi_period", 14),
+            "rsi_oversold": cs.get("rsi_oversold", 35),
+            "rsi_overbought": cs.get("rsi_overbought", 70),
+            "ema_fast": cs.get("ema_fast", 9),
+            "ema_med": cs.get("ema_med", 21),
+            "ema_long": cs.get("ema_long", 55),
+            "atr_period": cs.get("atr_period", 14),
+            "dca_rsi_threshold": cs.get("dca_rsi_threshold", 42),
+            "dca_aggressive_rsi": cs.get("dca_aggressive_rsi", 20),
+            "stop_atr_multiplier": cs.get("stop_atr_multiplier", 2.0),
+            "trail_pct": config.get("trailing_stop", {}).get("trail_pct", 5.0),
+            "loss_pct": config.get("trailing_stop", {}).get("loss_pct", 5.0),
+        }
+
+    # Fallback to defaults if config unreadable
+    print("  WARNING: Could not load strategy_params.json, using defaults")
+    return {
+        "watchlist": ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"],
+        "position_size_usd": 2500,
+        "position_size_bounds": [1000, 5000],
+        "bb_period": 20, "bb_std": 2.0,
+        "rsi_period": 14, "rsi_oversold": 35, "rsi_overbought": 70,
+        "ema_fast": 9, "ema_med": 21, "ema_long": 55,
+        "atr_period": 14,
+        "dca_rsi_threshold": 42, "dca_aggressive_rsi": 20,
+        "stop_atr_multiplier": 2.0,
+        "trail_pct": 5.0, "loss_pct": 5.0,
+    }
 
 
 # ============================================================
@@ -241,7 +287,7 @@ def generate_signals(df, symbol):
                 "strength": "STRONG",
                 "reason": f"Price ({price:.2f}) < lower BB ({bb_lower:.2f}), RSI={rsi:.1f}, ADX={adx:.1f} (ranging)",
                 "indicators": indicators,
-                "stop_distance": round(float(atr * 2), 4),
+                "stop_distance": round(float(atr * STOP_ATR_MULTIPLIER), 4),
             })
         else:
             print(f"  [{symbol}] Mean reversion BLOCKED by ADX={adx:.1f} (trending market, would lose money)")
@@ -315,7 +361,7 @@ def generate_signals(df, symbol):
     if not buy_signals:
         # Near mean-reversion: price within 2% of lower BB or RSI < 43
         near_bb = price < bb_lower * 1.02
-        near_oversold = rsi < 43
+        near_oversold = rsi < 38
         if near_bb or near_oversold:
             signals.append({
                 "symbol": symbol,
@@ -329,7 +375,7 @@ def generate_signals(df, symbol):
             })
 
         # Near trend: EMAs partially aligned or RSI borderline
-        if (ema9 > ema21 and ema9 > ema55 and rsi > 45) or (ema9 > ema55 and rsi > 45):
+        if (ema9 > ema21 and ema9 > ema55 and rsi > 45 and is_trending) or (ema9 > ema55 and rsi > 50 and is_trending):
             signals.append({
                 "symbol": symbol,
                 "strategy": "CRYPTO_TREND",
@@ -342,7 +388,7 @@ def generate_signals(df, symbol):
             })
 
         # BB lower-half accumulation: price in lower 45% of BB with moderate RSI
-        if bb_pos is not None and not np.isnan(bb_pos) and bb_pos < 0.45 and rsi < 48:
+        if bb_pos is not None and not np.isnan(bb_pos) and bb_pos < 0.30 and rsi < 40:
             signals.append({
                 "symbol": symbol,
                 "strategy": "CRYPTO_DCA",
@@ -503,41 +549,61 @@ def _find_strategy_for_position(symbol, positions_data):
     return "TRAILING_STOP"
 
 
-def update_trailing_stops(new_trades):
-    """Add new crypto positions to trailing stops state."""
+def update_trailing_stops(new_trades, params=None):
+    """Add new crypto positions to trailing stops state, or update existing ones for DCA buys."""
     stops_data = atomic_read_json(str(TRAILING_STOPS_FILE))
     if stops_data is None:
         stops_data = {"schema_version": "1.0.0", "active_stops": [], "closed_stops": []}
 
-    existing_symbols = {s.get("symbol") for s in stops_data.get("active_stops", [])}
+    # Build lookup by symbol
+    stops_by_symbol = {}
+    for i, stop in enumerate(stops_data.get("active_stops", [])):
+        stops_by_symbol[stop.get("symbol")] = i
 
     for trade in new_trades:
-        if trade.get("action") != "BUY" or trade.get("symbol") in existing_symbols:
-            continue
-        if "error" in trade:
+        if trade.get("action") != "BUY" or "error" in trade:
             continue
 
+        symbol = trade.get("symbol")
         price = trade.get("fill_price") or trade.get("indicators", {}).get("price", 0)
-        if price <= 0:
+        qty = trade.get("fill_qty", 0)
+        if price <= 0 or qty <= 0:
             continue
 
-        stops_data["active_stops"].append({
-            "symbol": trade["symbol"],
-            "asset_class": "crypto",
-            "entry_order_id": trade.get("order_id", ""),
-            "qty": trade.get("fill_qty", 0),
-            "entry_price": price,
-            "highest_price": price,
-            "floor_price": round(price * 0.95, 4),  # 5% trail
-            "trail_pct": 5.0,
-            "loss_pct": 5.0,
-            "status": "ACTIVE",
-            "trailing_stop_order_id": None,
-            "opened_at": datetime.now(timezone.utc).isoformat(),
-            "last_checked": datetime.now(timezone.utc).isoformat(),
-            "strategy_source": trade.get("strategy", "CRYPTO_STRATEGY"),
-        })
-        existing_symbols.add(trade["symbol"])
+        if symbol in stops_by_symbol:
+            # UPDATE existing stop — accumulate quantity, recalculate avg entry
+            idx = stops_by_symbol[symbol]
+            stop = stops_data["active_stops"][idx]
+            old_qty = stop.get("qty", 0)
+            old_entry = stop.get("entry_price", price)
+            new_total_qty = old_qty + qty
+            # Weighted average entry price
+            new_entry = ((old_entry * old_qty) + (price * qty)) / new_total_qty if new_total_qty > 0 else price
+            stop["qty"] = round(new_total_qty, 9)
+            stop["entry_price"] = round(new_entry, 6)
+            stop["last_checked"] = datetime.now(timezone.utc).isoformat()
+            print(f"  Updated trailing stop for {symbol}: qty {old_qty:.6f} -> {new_total_qty:.6f}, avg entry ${old_entry:.4f} -> ${new_entry:.4f}")
+        else:
+            # NEW symbol — create new stop entry
+            stops_data["active_stops"].append({
+                "symbol": symbol,
+                "asset_class": "crypto",
+                "entry_order_id": trade.get("order_id", ""),
+                "qty": round(qty, 9),
+                "entry_price": round(price, 6),
+                "highest_price": round(price, 6),
+                "floor_price": round(price * (1 - (params or {}).get("loss_pct", 5.0) / 100), 4),
+                "trail_pct": (params or {}).get("trail_pct", 5.0),
+                "loss_pct": (params or {}).get("loss_pct", 5.0),
+                "status": "ACTIVE",
+                "trailing_stop_order_id": None,
+                "opened_at": datetime.now(timezone.utc).isoformat(),
+                "last_checked": datetime.now(timezone.utc).isoformat(),
+                "strategy_source": trade.get("strategy", "CRYPTO_STRATEGY"),
+            })
+            stops_by_symbol[symbol] = len(stops_data["active_stops"]) - 1
+            floor = price * (1 - (params or {}).get("loss_pct", 5.0) / 100)
+            print(f"  New trailing stop for {symbol}: qty={qty:.6f}, entry=${price:.4f}, floor=${floor:.4f}")
 
     atomic_write_json(str(TRAILING_STOPS_FILE), stops_data)
     print(f"  Trailing stops updated: {len(stops_data.get('active_stops', []))} active")
@@ -552,8 +618,42 @@ def main():
     print("=" * 70)
     print(f"ATLAS Lite Crypto Strategy Engine")
     print(f"Run time: {now.isoformat()}")
-    print(f"Watchlist: {', '.join(CRYPTO_WATCHLIST)}")
     print("=" * 70)
+
+    # ---- Load dynamic parameters from config ----
+    params = load_params()
+    print(f"\n[0/6] Loaded parameters from config:")
+    print(f"  RSI oversold: {params['rsi_oversold']}, overbought: {params['rsi_overbought']}")
+    print(f"  DCA RSI threshold: {params['dca_rsi_threshold']}")
+    print(f"  Position size: ${params['position_size_usd']}")
+    print(f"  BB period: {params['bb_period']}, std: {params['bb_std']}")
+
+    # Override module-level constants with config values
+    global CRYPTO_WATCHLIST, POSITION_SIZE_USD, BB_PERIOD, BB_STD, RSI_PERIOD
+    global RSI_OVERSOLD, RSI_OVERBOUGHT, EMA_FAST, EMA_MED, EMA_LONG
+    global ATR_PERIOD, DCA_RSI_THRESHOLD, DCA_AGGRESSIVE_RSI, STOP_ATR_MULTIPLIER
+    global MIN_POSITION_USD, MAX_POSITION_USD
+
+    CRYPTO_WATCHLIST = params["watchlist"]
+    POSITION_SIZE_USD = params["position_size_usd"]
+    BB_PERIOD = params["bb_period"]
+    BB_STD = params["bb_std"]
+    RSI_PERIOD = params["rsi_period"]
+    RSI_OVERSOLD = params["rsi_oversold"]
+    RSI_OVERBOUGHT = params["rsi_overbought"]
+    EMA_FAST = params["ema_fast"]
+    EMA_MED = params["ema_med"]
+    EMA_LONG = params["ema_long"]
+    ATR_PERIOD = params["atr_period"]
+    DCA_RSI_THRESHOLD = params["dca_rsi_threshold"]
+    DCA_AGGRESSIVE_RSI = params["dca_aggressive_rsi"]
+    STOP_ATR_MULTIPLIER = params["stop_atr_multiplier"]
+
+    bounds = params["position_size_bounds"]
+    MIN_POSITION_USD = bounds[0]
+    MAX_POSITION_USD = bounds[1]
+
+    print(f"Watchlist: {', '.join(CRYPTO_WATCHLIST)}")
 
     # ---- Initialize clients ----
     print("\n[1/6] Initializing Alpaca clients...")
@@ -572,6 +672,33 @@ def main():
     except Exception as e:
         print(f"  ERROR connecting to Alpaca: {e}")
         return
+
+    # ---- Check regime filter ----
+    print("\n[1.5/6] Checking regime filter...")
+    REGIME_FILE = STATE_DIR / "regime.json"
+    regime_data = atomic_read_json(str(REGIME_FILE))
+    if regime_data:
+        regime = regime_data.get("current_regime", "UNKNOWN")
+        composite = regime_data.get("composite_score", 0)
+        print(f"  Current regime: {regime} (composite: {composite})")
+
+        if regime == "RISK_OFF":
+            print("  RISK_OFF regime — NO new entries allowed. Exiting.")
+            print("  (Existing positions will be managed by trailing stop monitor)")
+            return []
+        elif regime == "CAUTIOUS":
+            print("  CAUTIOUS regime — reducing position sizes by 50%")
+            # Apply cautious multiplier from strategy_params
+            CAUTIOUS_MULTIPLIER = 0.5
+        else:
+            CAUTIOUS_MULTIPLIER = 1.0
+            print(f"  RISK_ON — full position sizes")
+    else:
+        print("  WARNING: Could not read regime.json, proceeding with caution")
+        CAUTIOUS_MULTIPLIER = 0.75
+        regime_data = None
+        regime = "UNKNOWN"
+        composite = 0
 
     # Check existing positions
     try:
@@ -707,7 +834,8 @@ def main():
         effective_size = min(POSITION_SIZE_USD, available_cash / max(len(best_buy_per_symbol), 1))
         effective_size = max(MIN_POSITION_USD, min(MAX_POSITION_USD, effective_size))
 
-    print(f"  Position size per trade: ${effective_size:,.2f}")
+    effective_size = effective_size * CAUTIOUS_MULTIPLIER  # Regime adjustment
+    print(f"  Position size per trade: ${effective_size:,.2f} (regime multiplier: {CAUTIOUS_MULTIPLIER})")
     print(f"  Trades to execute: {len(best_buy_per_symbol)} primary buys")
 
     # Execute BUY orders
@@ -827,7 +955,7 @@ def main():
     # ---- Update state files ----
     print("\n[5/6] Updating state files...")
     update_positions(trades_placed, trading_client)
-    update_trailing_stops(trades_placed)
+    update_trailing_stops(trades_placed, params)
 
     # ---- Final summary ----
     print("\n" + "=" * 70)
@@ -863,7 +991,8 @@ def main():
     except Exception:
         pass
 
-    print(f"\n  Regime: RISK_ON (composite: 0.65)")
+    regime_str = f"{regime} (composite: {composite})" if regime_data else "UNKNOWN"
+    print(f"\n  Regime: {regime_str}")
     print(f"  Next run: Schedule this script to run every 1-4 hours for continuous crypto signals")
     print("=" * 70)
 
