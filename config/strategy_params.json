@@ -75,6 +75,29 @@
       "momentum_large_cap": "SPY"
     }
   },
+  "crypto_strategy": {
+    "enabled": true,
+    "watchlist": ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"],
+    "position_size_usd": 2500,
+    "position_size_bounds": [1000, 5000],
+    "bb_period": 20,
+    "bb_std": 2.0,
+    "rsi_period": 14,
+    "rsi_oversold": 35,
+    "rsi_oversold_bounds": [25, 40],
+    "rsi_overbought": 70,
+    "rsi_overbought_bounds": [65, 80],
+    "ema_fast": 9,
+    "ema_med": 21,
+    "ema_long": 55,
+    "atr_period": 14,
+    "dca_rsi_threshold": 42,
+    "dca_rsi_threshold_bounds": [30, 50],
+    "dca_aggressive_rsi": 20,
+    "stop_atr_multiplier": 2.0,
+    "strategies": ["CRYPTO_MEAN_REVERSION", "CRYPTO_TREND", "CRYPTO_DCA"],
+    "schedule": "Every 2 hours, 24/7"
+  },
   "risk": {
     "max_position_pct_options": 5.0,
     "max_position_pct_equity": 10.0,
