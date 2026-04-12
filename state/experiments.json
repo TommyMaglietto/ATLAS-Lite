@@ -1,12 +1,27 @@
 {
   "schema_version": "1.0.0",
-  "current_experiment": null,
-  "engine_status": "WAITING_FOR_DATA",
-  "engine_status_reason": "26 trades logged, need 30+ before experiments can begin",
-  "engine_status_updated": "2026-04-12T21:35:58.596253+00:00",
+  "current_experiment": {
+    "id": "exp_20260412_645",
+    "strategy": "TRAILING_STOP",
+    "parameter": "loss_pct",
+    "config_section": "trailing_stop",
+    "original_value": 5.0,
+    "test_value": 5.4642,
+    "bounds": [
+      3.0,
+      15.0
+    ],
+    "baseline_sharpe": 0.0,
+    "status": "RUNNING",
+    "started_at": "2026-04-12T21:37:29.398709+00:00",
+    "eval_until": "2026-04-17T21:37:29.398709+00:00"
+  },
+  "engine_status": "RUNNING_EXPERIMENT",
+  "engine_status_reason": "Testing loss_pct=5.4642 (was 5.0)",
+  "engine_status_updated": "2026-04-12T21:37:29.400462+00:00",
   "completed_experiments": [],
   "statistics": {
-    "total_experiments": 0,
+    "total_experiments": 1,
     "accepted": 0,
     "rejected": 0,
     "acceptance_rate": 0

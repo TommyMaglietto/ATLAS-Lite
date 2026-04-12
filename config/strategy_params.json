@@ -1,31 +1,61 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-04-11T00:00:00Z",
+  "last_updated": "2026-04-12T21:37:29.398742+00:00",
   "trailing_stop": {
     "enabled": true,
-    "loss_pct": 5.0,
-    "loss_pct_bounds": [3.0, 15.0],
+    "loss_pct": 5.4642,
+    "loss_pct_bounds": [
+      3.0,
+      15.0
+    ],
     "trail_pct": 5.0,
-    "trail_pct_bounds": [2.0, 10.0],
+    "trail_pct_bounds": [
+      2.0,
+      10.0
+    ],
     "ladder_buy_enabled": true,
     "ladder_levels": [
-      { "drop_pct": 15, "shares": 10 },
-      { "drop_pct": 20, "shares": 20 },
-      { "drop_pct": 30, "shares": 50 }
+      {
+        "drop_pct": 15,
+        "shares": 10
+      },
+      {
+        "drop_pct": 20,
+        "shares": 20
+      },
+      {
+        "drop_pct": 30,
+        "shares": 50
+      }
     ],
     "profit_taking_enabled": true,
     "profit_tiers": [
-      { "gain_pct": 10, "sell_pct": 15 },
-      { "gain_pct": 20, "sell_pct": 20 },
-      { "gain_pct": 35, "sell_pct": 25 }
+      {
+        "gain_pct": 10,
+        "sell_pct": 15
+      },
+      {
+        "gain_pct": 20,
+        "sell_pct": 20
+      },
+      {
+        "gain_pct": 35,
+        "sell_pct": 25
+      }
     ]
   },
   "wheel": {
     "enabled": true,
     "put_delta": 0.25,
-    "put_delta_bounds": [0.20, 0.35],
+    "put_delta_bounds": [
+      0.2,
+      0.35
+    ],
     "call_delta": 0.25,
-    "call_delta_bounds": [0.20, 0.35],
+    "call_delta_bounds": [
+      0.2,
+      0.35
+    ],
     "dte_min": 14,
     "dte_max": 45,
     "dte_target": 30,
@@ -64,11 +94,11 @@
     "cautious_size_multiplier": 0.5,
     "risk_off_exit_threshold_pct": -3.0,
     "signal_weights": {
-      "trend": 0.30,
+      "trend": 0.3,
       "volatility": 0.25,
-      "breadth": 0.20,
+      "breadth": 0.2,
       "credit": 0.15,
-      "momentum": 0.10
+      "momentum": 0.1
     },
     "proxy_etfs": {
       "trend": "SPY",
@@ -83,29 +113,64 @@
   },
   "crypto_strategy": {
     "enabled": true,
-    "watchlist": ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"],
+    "watchlist": [
+      "BTC/USD",
+      "ETH/USD",
+      "SOL/USD",
+      "DOGE/USD",
+      "AVAX/USD",
+      "LINK/USD"
+    ],
     "position_size_usd": 2500,
-    "position_size_bounds": [1000, 5000],
+    "position_size_bounds": [
+      1000,
+      5000
+    ],
     "bb_period": 20,
     "bb_std": 2.0,
-    "bb_std_bounds": [1.5, 3.0],
+    "bb_std_bounds": [
+      1.5,
+      3.0
+    ],
     "rsi_period": 14,
     "rsi_oversold": 35,
-    "rsi_oversold_bounds": [25, 40],
+    "rsi_oversold_bounds": [
+      25,
+      40
+    ],
     "rsi_overbought": 70,
-    "rsi_overbought_bounds": [65, 80],
+    "rsi_overbought_bounds": [
+      65,
+      80
+    ],
     "ema_fast": 9,
-    "ema_fast_bounds": [5, 15],
+    "ema_fast_bounds": [
+      5,
+      15
+    ],
     "ema_med": 21,
-    "ema_med_bounds": [15, 30],
+    "ema_med_bounds": [
+      15,
+      30
+    ],
     "ema_long": 55,
-    "ema_long_bounds": [40, 80],
+    "ema_long_bounds": [
+      40,
+      80
+    ],
     "atr_period": 14,
     "dca_rsi_threshold": 42,
-    "dca_rsi_threshold_bounds": [30, 50],
+    "dca_rsi_threshold_bounds": [
+      30,
+      50
+    ],
     "dca_aggressive_rsi": 20,
     "stop_atr_multiplier": 2.0,
-    "strategies": ["CRYPTO_MEAN_REVERSION", "CRYPTO_TREND", "CRYPTO_DCA"],
+    "strategies": [
+      "CRYPTO_MEAN_REVERSION",
+      "CRYPTO_TREND",
+      "CRYPTO_DCA"
+    ],
     "schedule": "Every 2 hours, 24/7"
   },
   "risk": {
