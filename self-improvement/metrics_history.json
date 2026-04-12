@@ -1,5 +1,44 @@
 {
   "schema_version": "1.0.0",
   "daily_metrics": [],
-  "experiment_metrics": []
+  "experiment_metrics": [
+    {
+      "timestamp": "2026-04-12T21:36:55.116119+00:00",
+      "type": "baseline",
+      "strategies": {
+        "UNKNOWN": {
+          "sharpe": 0.0,
+          "trade_count": 5,
+          "total_pnl": 0
+        },
+        "politician_copy": {
+          "sharpe": 0.0,
+          "trade_count": 2,
+          "total_pnl": 0
+        },
+        "TRAILING_STOP": {
+          "sharpe": 0.0,
+          "trade_count": 7,
+          "total_pnl": 0
+        },
+        "CRYPTO_DCA": {
+          "sharpe": 0.0,
+          "trade_count": 17,
+          "total_pnl": 0
+        },
+        "CRYPTO_TREND": {
+          "sharpe": 0.0,
+          "trade_count": 3,
+          "total_pnl": 0
+        },
+        "CRYPTO_REBALANCE": {
+          "sharpe": 0.0,
+          "trade_count": 3,
+          "total_pnl": 0
+        }
+      },
+      "weakest": "UNKNOWN",
+      "experiment_id": "exp_20260412_876"
+    }
+  ]
 }

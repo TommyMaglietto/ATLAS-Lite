@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0.0",
   "current_experiment": null,
-  "engine_status": "READY",
-  "engine_status_reason": "31 trades logged, ready for first experiment",
-  "engine_status_updated": "2026-04-12T21:00:00-04:00",
+  "engine_status": "WAITING_FOR_DATA",
+  "engine_status_reason": "26 trades logged, need 30+ before experiments can begin",
+  "engine_status_updated": "2026-04-12T21:35:58.596253+00:00",
   "completed_experiments": [],
   "statistics": {
     "total_experiments": 0,

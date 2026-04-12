@@ -1,78 +1,78 @@
 {
   "schema_version": "1.0.0",
-  "last_reconciled": "2026-04-12T18:04:30.119910+00:00",
+  "last_reconciled": "2026-04-12T21:36:48.753466+00:00",
   "positions": [
     {
       "symbol": "AVAXUSD",
       "asset_class": "AssetClass.CRYPTO",
       "strategy": "TRAILING_STOP",
-      "qty": 534.955393416,
-      "entry_price": 9.140006967,
-      "current_price": 9.09,
-      "market_value": 4862.744526,
-      "cost_basis": 4889.496023,
-      "unrealized_pnl": -26.751497,
-      "opened_at": "2026-04-12T18:04:30.119874+00:00"
+      "qty": 764.237685483,
+      "entry_price": 9.142840172,
+      "current_price": 9.14646,
+      "market_value": 6990.069421,
+      "cost_basis": 6987.303012,
+      "unrealized_pnl": 2.766409,
+      "opened_at": "2026-04-12T21:36:48.753431+00:00"
     },
     {
       "symbol": "BTCUSD",
       "asset_class": "AssetClass.CRYPTO",
       "strategy": "TRAILING_STOP",
-      "qty": 0.307289818,
-      "entry_price": 72591.313227285,
-      "current_price": 71162.929,
-      "market_value": 21867.643501,
-      "cost_basis": 22306.57143,
-      "unrealized_pnl": -438.927929,
-      "opened_at": "2026-04-12T18:04:30.119888+00:00"
+      "qty": 0.350485957,
+      "entry_price": 72430.248336577,
+      "current_price": 71357.29,
+      "market_value": 25009.728075,
+      "cost_basis": 25385.784904,
+      "unrealized_pnl": -376.056829,
+      "opened_at": "2026-04-12T21:36:48.753444+00:00"
     },
     {
       "symbol": "DOGEUSD",
       "asset_class": "AssetClass.CRYPTO",
       "strategy": "TRAILING_STOP",
-      "qty": 53535.456951421,
-      "entry_price": 0.091372223,
-      "current_price": 0.0907981,
-      "market_value": 4860.917774,
-      "cost_basis": 4891.653711,
-      "unrealized_pnl": -30.735937,
-      "opened_at": "2026-04-12T18:04:30.119893+00:00"
+      "qty": 76516.771385281,
+      "entry_price": 0.091410596,
+      "current_price": 0.0914114,
+      "market_value": 6994.505196,
+      "cost_basis": 6994.443676,
+      "unrealized_pnl": 0.06152,
+      "opened_at": "2026-04-12T21:36:48.753449+00:00"
     },
     {
       "symbol": "ETHUSD",
       "asset_class": "AssetClass.CRYPTO",
       "strategy": "TRAILING_STOP",
-      "qty": 9.929246044,
-      "entry_price": 2247.21382229,
-      "current_price": 2204.7,
-      "market_value": 21891.008753,
-      "cost_basis": 22313.138955,
-      "unrealized_pnl": -422.130202,
-      "opened_at": "2026-04-12T18:04:30.119897+00:00"
+      "qty": 11.324160143,
+      "entry_price": 2242.317317004,
+      "current_price": 2210.5,
+      "market_value": 25032.055996,
+      "cost_basis": 25392.360389,
+      "unrealized_pnl": -360.304393,
+      "opened_at": "2026-04-12T21:36:48.753452+00:00"
     },
     {
       "symbol": "LINKUSD",
       "asset_class": "AssetClass.CRYPTO",
       "strategy": "TRAILING_STOP",
-      "qty": 555.945333206,
-      "entry_price": 8.799388207,
-      "current_price": 8.7227,
-      "market_value": 4849.344358,
-      "cost_basis": 4891.978809,
-      "unrealized_pnl": -42.634451,
-      "opened_at": "2026-04-12T18:04:30.119899+00:00"
+      "qty": 794.109423051,
+      "entry_price": 8.808231484,
+      "current_price": 8.83091,
+      "market_value": 7012.708845,
+      "cost_basis": 6994.699622,
+      "unrealized_pnl": 18.009223,
+      "opened_at": "2026-04-12T21:36:48.753455+00:00"
     },
     {
       "symbol": "SOLUSD",
       "asset_class": "AssetClass.CRYPTO",
       "strategy": "TRAILING_STOP",
-      "qty": 59.376913434,
-      "entry_price": 82.21278486,
-      "current_price": 82.34,
-      "market_value": 4889.095052,
-      "cost_basis": 4881.54141,
-      "unrealized_pnl": 7.553642,
-      "opened_at": "2026-04-12T18:04:30.119902+00:00"
+      "qty": 96.658972069,
+      "entry_price": 82.321673778,
+      "current_price": 82.87,
+      "market_value": 8010.129015,
+      "cost_basis": 7957.128366,
+      "unrealized_pnl": 53.000649,
+      "opened_at": "2026-04-12T21:36:48.753458+00:00"
     }
   ],
   "pending_orders": [
@@ -116,9 +116,9 @@
   "totals": {
     "total_positions": 6,
     "total_pending": 3,
-    "total_value": 92888.64,
-    "cash_available": 35664.81,
-    "cash_reserved_pct": 36.1,
-    "deployed_pct": 63.9
+    "total_value": 108717.09,
+    "cash_available": 20088.53,
+    "cash_reserved_pct": 20.3,
+    "deployed_pct": 79.7
   }
 }
