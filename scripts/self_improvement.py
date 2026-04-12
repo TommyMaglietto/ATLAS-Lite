@@ -351,10 +351,16 @@ def phase_baseline(experiments, strategy_params):
     for strat, m in strategy_metrics.items():
         log(f"  {strat}: sharpe={m['sharpe']}, pnl={m['total_pnl']}, trades={m['trade_count']}")
 
+    # Filter to only strategies with tunable parameters
+    tunable_strategies = {s: m for s, m in strategy_metrics.items() if s in STRATEGY_PARAM_MAP}
+    if not tunable_strategies:
+        log("No tunable strategies found in recent trades. Cannot run experiment.")
+        return strategy_metrics, None
+
     # Identify weakest: lowest Sharpe, break ties by most negative PnL
     weakest = min(
-        strategy_metrics.keys(),
-        key=lambda s: (strategy_metrics[s]["sharpe"], strategy_metrics[s]["total_pnl"]),
+        tunable_strategies.keys(),
+        key=lambda s: (tunable_strategies[s]["sharpe"], tunable_strategies[s]["total_pnl"]),
     )
     log(f"Weakest strategy: {weakest} (sharpe={strategy_metrics[weakest]['sharpe']})")
 
