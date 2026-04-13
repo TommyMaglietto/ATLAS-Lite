@@ -5,6 +5,9 @@ Implements Bollinger Band + RSI Mean Reversion, EMA Crossover Trend Following,
 and Smart DCA with Technical Triggers for crypto assets.
 
 Runs against Alpaca paper trading API. Crypto trades 24/7.
+
+Usage:
+    python scripts/crypto_strategy.py [--quiet]
 """
 
 import json
@@ -36,6 +39,9 @@ TRAILING_STOPS_FILE = STATE_DIR / "trailing_stops.json"
 # ---------- add scripts to path for atomic_write ----------
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from atomic_write import atomic_write_json, atomic_read_json
+
+# ---------- Quiet mode: suppress verbose output when nothing actionable happens ----------
+QUIET = "--quiet" in sys.argv
 
 # ---------- API credentials ----------
 API_KEY = os.environ.get("ALPACA_API_KEY") or os.environ.get("APCA_API_KEY_ID", "")
@@ -293,7 +299,8 @@ def generate_signals(df, symbol):
     """
     signals = []
     if df.empty or len(df) < EMA_LONG + 5:
-        print(f"  [{symbol}] Not enough data ({len(df)} bars), skipping")
+        if not QUIET:
+            print(f"  [{symbol}] Not enough data ({len(df)} bars), skipping")
         return signals
 
     latest = df.iloc[-1]
@@ -345,7 +352,8 @@ def generate_signals(df, symbol):
                 "stop_distance": round(float(atr * STOP_ATR_MULTIPLIER), 4),
             })
         else:
-            print(f"  [{symbol}] Mean reversion BLOCKED by ADX={adx:.1f} (trending market, would lose money)")
+            if not QUIET:
+                print(f"  [{symbol}] Mean reversion BLOCKED by ADX={adx:.1f} (trending market, would lose money)")
 
     # --- Signal 2: EMA Crossover BUY ---
     # 9 EMA > 21 EMA, both above 55 EMA, RSI > 50
@@ -551,7 +559,8 @@ def update_positions(new_trades, trading_client):
         cash = float(account.cash)
         equity = float(account.equity)
     except Exception as e:
-        print(f"  Warning: Could not fetch account info: {e}")
+        if not QUIET:
+            print(f"  Warning: Could not fetch account info: {e}")
         cash = positions_data.get("totals", {}).get("cash_available", 0)
         equity = ACCOUNT_VALUE_APPROX
 
@@ -574,7 +583,8 @@ def update_positions(new_trades, trading_client):
             })
         positions_data["positions"] = updated_positions
     except Exception as e:
-        print(f"  Warning: Could not fetch positions from Alpaca: {e}")
+        if not QUIET:
+            print(f"  Warning: Could not fetch positions from Alpaca: {e}")
 
     # Update totals
     total_value = sum(p.get("market_value", 0) for p in positions_data.get("positions", []))
@@ -590,7 +600,8 @@ def update_positions(new_trades, trading_client):
     }
 
     atomic_write_json(str(POSITIONS_FILE), positions_data)
-    print(f"  Positions updated: {len(positions_data.get('positions', []))} active, ${cash:.2f} cash")
+    if not QUIET:
+        print(f"  Positions updated: {len(positions_data.get('positions', []))} active, ${cash:.2f} cash")
 
 
 def _find_strategy_for_position(symbol, positions_data):
@@ -637,7 +648,8 @@ def update_trailing_stops(new_trades, params=None):
             stop["qty"] = round(new_total_qty, 9)
             stop["entry_price"] = round(new_entry, 6)
             stop["last_checked"] = datetime.now(timezone.utc).isoformat()
-            print(f"  Updated trailing stop for {symbol}: qty {old_qty:.6f} -> {new_total_qty:.6f}, avg entry ${old_entry:.4f} -> ${new_entry:.4f}")
+            if not QUIET:
+                print(f"  Updated trailing stop for {symbol}: qty {old_qty:.6f} -> {new_total_qty:.6f}, avg entry ${old_entry:.4f} -> ${new_entry:.4f}")
         else:
             # NEW symbol — create new stop entry
             stops_data["active_stops"].append({
@@ -658,10 +670,12 @@ def update_trailing_stops(new_trades, params=None):
             })
             stops_by_symbol[symbol] = len(stops_data["active_stops"]) - 1
             floor = price * (1 - (params or {}).get("loss_pct", 5.0) / 100)
-            print(f"  New trailing stop for {symbol}: qty={qty:.6f}, entry=${price:.4f}, floor=${floor:.4f}")
+            if not QUIET:
+                print(f"  New trailing stop for {symbol}: qty={qty:.6f}, entry=${price:.4f}, floor=${floor:.4f}")
 
     atomic_write_json(str(TRAILING_STOPS_FILE), stops_data)
-    print(f"  Trailing stops updated: {len(stops_data.get('active_stops', []))} active")
+    if not QUIET:
+        print(f"  Trailing stops updated: {len(stops_data.get('active_stops', []))} active")
 
 
 # ============================================================
@@ -670,18 +684,20 @@ def update_trailing_stops(new_trades, params=None):
 
 def main():
     now = datetime.now(timezone.utc)
-    print("=" * 70)
-    print(f"ATLAS Lite Crypto Strategy Engine")
-    print(f"Run time: {now.isoformat()}")
-    print("=" * 70)
+    if not QUIET:
+        print("=" * 70)
+        print(f"ATLAS Lite Crypto Strategy Engine")
+        print(f"Run time: {now.isoformat()}")
+        print("=" * 70)
 
     # ---- Load dynamic parameters from config ----
     params = load_params()
-    print(f"\n[0/6] Loaded parameters from config:")
-    print(f"  RSI oversold: {params['rsi_oversold']}, overbought: {params['rsi_overbought']}")
-    print(f"  DCA RSI threshold: {params['dca_rsi_threshold']}")
-    print(f"  Position size: ${params['position_size_usd']}")
-    print(f"  BB period: {params['bb_period']}, std: {params['bb_std']}")
+    if not QUIET:
+        print(f"\n[0/6] Loaded parameters from config:")
+        print(f"  RSI oversold: {params['rsi_oversold']}, overbought: {params['rsi_overbought']}")
+        print(f"  DCA RSI threshold: {params['dca_rsi_threshold']}")
+        print(f"  Position size: ${params['position_size_usd']}")
+        print(f"  BB period: {params['bb_period']}, std: {params['bb_std']}")
 
     # Override module-level constants with config values
     global CRYPTO_WATCHLIST, POSITION_SIZE_USD, BB_PERIOD, BB_STD, RSI_PERIOD
@@ -708,7 +724,8 @@ def main():
     MIN_POSITION_USD = bounds[0]
     MAX_POSITION_USD = bounds[1]
 
-    print(f"Watchlist: {', '.join(CRYPTO_WATCHLIST)}")
+    if not QUIET:
+        print(f"Watchlist: {', '.join(CRYPTO_WATCHLIST)}")
 
     # Load signal quality scores (if available)
     SIGNAL_SCORES_FILE = STATE_DIR / "signal_scores.json"
@@ -718,14 +735,16 @@ def main():
         for sig_name, score in signal_scores["signal_scoreboard"].items():
             if score.get("grade") == "F" and score.get("closed_trades", 0) >= 5:
                 disabled_signals.add(sig_name)
-                print(f"  Signal '{sig_name}' DISABLED — F grade ({score.get('win_rate', 0):.0%} win rate)")
-        if not disabled_signals:
+                if not QUIET:
+                    print(f"  Signal '{sig_name}' DISABLED — F grade ({score.get('win_rate', 0):.0%} win rate)")
+        if not disabled_signals and not QUIET:
             print(f"  All signals active (scores loaded for {len(signal_scores['signal_scoreboard'])} signals)")
-    else:
+    elif not QUIET:
         print(f"  Signal scores not available yet — all signals active")
 
     # ---- Initialize clients ----
-    print("\n[1/6] Initializing Alpaca clients...")
+    if not QUIET:
+        print("\n[1/6] Initializing Alpaca clients...")
     data_client = CryptoHistoricalDataClient()  # No keys needed for crypto data
     trading_client = TradingClient(API_KEY, SECRET_KEY, paper=PAPER)
 
@@ -734,36 +753,45 @@ def main():
         account = trading_client.get_account()
         equity = float(account.equity)
         cash = float(account.cash)
-        print(f"  Account: equity=${equity:,.2f}, cash=${cash:,.2f}")
-        print(f"  Cash reserve needed (20%): ${equity * CASH_RESERVE_PCT:,.2f}")
-        available = cash - (equity * CASH_RESERVE_PCT)
-        print(f"  Available for new trades: ${available:,.2f}")
+        if not QUIET:
+            print(f"  Account: equity=${equity:,.2f}, cash=${cash:,.2f}")
+            print(f"  Cash reserve needed (20%): ${equity * CASH_RESERVE_PCT:,.2f}")
+            available = cash - (equity * CASH_RESERVE_PCT)
+            print(f"  Available for new trades: ${available:,.2f}")
     except Exception as e:
         print(f"  ERROR connecting to Alpaca: {e}")
         return
 
     # ---- Check regime filter ----
-    print("\n[1.5/6] Checking regime filter...")
+    if not QUIET:
+        print("\n[1.5/6] Checking regime filter...")
     REGIME_FILE = STATE_DIR / "regime.json"
     regime_data = atomic_read_json(str(REGIME_FILE))
     if regime_data:
         regime = regime_data.get("current_regime", "UNKNOWN")
         composite = regime_data.get("composite_score", 0)
-        print(f"  Current regime: {regime} (composite: {composite})")
+        if not QUIET:
+            print(f"  Current regime: {regime} (composite: {composite})")
 
         if regime == "RISK_OFF":
-            print("  RISK_OFF regime — NO new entries allowed. Exiting.")
-            print("  (Existing positions will be managed by trailing stop monitor)")
+            if QUIET:
+                print(f"[QUIET] {len(CRYPTO_WATCHLIST)} pairs scanned, 0 signals triggered (RISK_OFF)")
+            else:
+                print("  RISK_OFF regime — NO new entries allowed. Exiting.")
+                print("  (Existing positions will be managed by trailing stop monitor)")
             return []
         elif regime == "CAUTIOUS":
-            print("  CAUTIOUS regime — reducing position sizes by 50%")
+            if not QUIET:
+                print("  CAUTIOUS regime — reducing position sizes by 50%")
             # Apply cautious multiplier from strategy_params
             CAUTIOUS_MULTIPLIER = 0.5
         else:
             CAUTIOUS_MULTIPLIER = 1.0
-            print(f"  RISK_ON — full position sizes")
+            if not QUIET:
+                print(f"  RISK_ON — full position sizes")
     else:
-        print("  WARNING: Could not read regime.json, proceeding with caution")
+        if not QUIET:
+            print("  WARNING: Could not read regime.json, proceeding with caution")
         CAUTIOUS_MULTIPLIER = 0.75
         regime_data = None
         regime = "UNKNOWN"
@@ -772,13 +800,15 @@ def main():
     # Check existing positions
     try:
         existing_positions = {p.symbol: p for p in trading_client.get_all_positions()}
-        print(f"  Existing positions: {list(existing_positions.keys())}")
+        if not QUIET:
+            print(f"  Existing positions: {list(existing_positions.keys())}")
     except Exception as e:
         print(f"  Warning: Could not fetch positions: {e}")
         existing_positions = {}
 
     # ---- Fetch historical data ----
-    print("\n[2/6] Fetching crypto bar data...")
+    if not QUIET:
+        print("\n[2/6] Fetching crypto bar data...")
     all_data = {}
 
     for timeframe_name, timeframe, bars_needed in [("1H", TimeFrame.Hour, 200), ("4H", TimeFrame(4, TimeFrame.Hour.unit), 200)]:
@@ -811,24 +841,30 @@ def main():
                         df = df.sort_values("timestamp").reset_index(drop=True)
                         df = compute_indicators(df)
                         all_data[key] = df
-                        print(f"  {key}: {len(df)} bars loaded, latest close=${df.iloc[-1]['close']:.4f}")
+                        if not QUIET:
+                            print(f"  {key}: {len(df)} bars loaded, latest close=${df.iloc[-1]['close']:.4f}")
                     else:
-                        print(f"  {key}: NO DATA")
+                        if not QUIET:
+                            print(f"  {key}: NO DATA")
                 except (KeyError, IndexError) as e:
-                    print(f"  {key}: No data available ({e})")
+                    if not QUIET:
+                        print(f"  {key}: No data available ({e})")
         except Exception as e:
-            print(f"  Error fetching {timeframe_name} bars: {e}")
+            if not QUIET:
+                print(f"  Error fetching {timeframe_name} bars: {e}")
 
     if not all_data:
         print("\nFATAL: No data fetched. Exiting.")
         return
 
     # ---- Generate signals ----
-    print("\n[3/6] Generating signals...")
+    if not QUIET:
+        print("\n[3/6] Generating signals...")
     all_signals = []
 
     for symbol in CRYPTO_WATCHLIST:
-        print(f"\n  --- {symbol} ---")
+        if not QUIET:
+            print(f"\n  --- {symbol} ---")
         # Prefer 1H data for mean reversion/DCA, 4H for trend following
         key_1h = f"{symbol}_1H"
         key_4h = f"{symbol}_4H"
@@ -839,11 +875,12 @@ def main():
             for s in sigs:
                 s["timeframe"] = "1H"
             all_signals.extend(sigs)
-            if sigs:
-                for s in sigs:
-                    print(f"    [1H] {s['strategy']} {s['action']} ({s['strength']}): {s['reason']}")
-            else:
-                print(f"    [1H] No signals")
+            if not QUIET:
+                if sigs:
+                    for s in sigs:
+                        print(f"    [1H] {s['strategy']} {s['action']} ({s['strength']}): {s['reason']}")
+                else:
+                    print(f"    [1H] No signals")
 
         # Generate from 4H (only trend signals)
         if key_4h in all_data:
@@ -858,16 +895,19 @@ def main():
             )
             if not existing_trend:
                 all_signals.extend(trend_sigs)
-                for s in trend_sigs:
-                    print(f"    [4H] {s['strategy']} {s['action']} ({s['strength']}): {s['reason']}")
+                if not QUIET:
+                    for s in trend_sigs:
+                        print(f"    [4H] {s['strategy']} {s['action']} ({s['strength']}): {s['reason']}")
 
     # ---- Summary of signals ----
     buy_signals = [s for s in all_signals if s["action"] == "BUY"]
     sell_signals = [s for s in all_signals if s["action"] == "SELL"]
-    print(f"\n  TOTAL: {len(buy_signals)} BUY signals, {len(sell_signals)} SELL signals")
+    if not QUIET:
+        print(f"\n  TOTAL: {len(buy_signals)} BUY signals, {len(sell_signals)} SELL signals")
 
     # ---- Execute trades ----
-    print("\n[4/6] Executing trades...")
+    if not QUIET:
+        print("\n[4/6] Executing trades...")
     trades_placed = []
 
     # De-duplicate: pick the strongest signal per symbol for buys
@@ -892,11 +932,13 @@ def main():
     # Calculate available cash for new crypto
     cash_reserve = equity * CASH_RESERVE_PCT
     available_cash = cash - cash_reserve
-    print(f"  Cash: ${cash:,.2f} | Reserve: ${cash_reserve:,.2f} | Available: ${available_cash:,.2f}")
+    if not QUIET:
+        print(f"  Cash: ${cash:,.2f} | Reserve: ${cash_reserve:,.2f} | Available: ${available_cash:,.2f}")
 
     if available_cash < MIN_POSITION_USD:
-        print(f"  WARNING: Available cash (${available_cash:,.2f}) below minimum position size (${MIN_POSITION_USD})")
-        print(f"  Will attempt smaller trades to generate data...")
+        if not QUIET:
+            print(f"  WARNING: Available cash (${available_cash:,.2f}) below minimum position size (${MIN_POSITION_USD})")
+            print(f"  Will attempt smaller trades to generate data...")
         # Reduce position size for data generation
         effective_size = max(500, available_cash / max(len(best_buy_per_symbol), 1))
     else:
@@ -904,20 +946,23 @@ def main():
         effective_size = max(MIN_POSITION_USD, min(MAX_POSITION_USD, effective_size))
 
     effective_size = effective_size * CAUTIOUS_MULTIPLIER  # Regime adjustment
-    print(f"  Position size per trade: ${effective_size:,.2f} (regime multiplier: {CAUTIOUS_MULTIPLIER})")
-    print(f"  Trades to execute: {len(best_buy_per_symbol)} primary buys")
+    if not QUIET:
+        print(f"  Position size per trade: ${effective_size:,.2f} (regime multiplier: {CAUTIOUS_MULTIPLIER})")
+        print(f"  Trades to execute: {len(best_buy_per_symbol)} primary buys")
 
     # Execute BUY orders
     budget_used = 0
     for symbol, signal in sorted(best_buy_per_symbol.items()):
         remaining = available_cash - budget_used
         if remaining < 500:
-            print(f"\n  BUDGET EXHAUSTED: ${remaining:.2f} remaining, skipping {symbol}")
+            if not QUIET:
+                print(f"\n  BUDGET EXHAUSTED: ${remaining:.2f} remaining, skipping {symbol}")
             break
 
         # Check signal quality gate
         if signal.get("signal_type") in disabled_signals:
-            print(f"  SKIPPED: {symbol} — signal '{signal['signal_type']}' is F-grade disabled")
+            if not QUIET:
+                print(f"  SKIPPED: {symbol} — signal '{signal['signal_type']}' is F-grade disabled")
             continue
 
         trade_size = min(effective_size, remaining)
@@ -1036,48 +1081,53 @@ def main():
                     print(f"      FILLED: {fill_qty} @ ${fill_price:,.4f} | PnL: ${pnl:+.2f}")
 
     # ---- Update state files ----
-    print("\n[5/6] Updating state files...")
+    if not QUIET:
+        print("\n[5/6] Updating state files...")
     update_positions(trades_placed, trading_client)
     update_trailing_stops(trades_placed, params)
 
     # ---- Final summary ----
-    print("\n" + "=" * 70)
-    print("[6/6] EXECUTION SUMMARY")
-    print("=" * 70)
-    print(f"  Signals found:  {len(all_signals)} total ({len(buy_signals)} BUY, {len(sell_signals)} SELL)")
-    print(f"  Trades placed:  {len(trades_placed)}")
     buy_trades = [t for t in trades_placed if t["action"] == "BUY"]
     sell_trades = [t for t in trades_placed if t["action"] == "SELL"]
-    print(f"    - Buys:  {len(buy_trades)}")
-    print(f"    - Sells: {len(sell_trades)}")
 
-    total_bought = sum(t.get("notional", 0) for t in buy_trades)
-    total_pnl = sum(t.get("pnl", 0) for t in sell_trades)
-    print(f"  Total bought: ${total_bought:,.2f}")
-    if sell_trades:
-        print(f"  Total realized PnL: ${total_pnl:+,.2f}")
+    if QUIET and len(trades_placed) == 0:
+        print(f"[QUIET] {len(CRYPTO_WATCHLIST)} pairs scanned, 0 signals triggered")
+    else:
+        print("\n" + "=" * 70)
+        print("[6/6] EXECUTION SUMMARY")
+        print("=" * 70)
+        print(f"  Signals found:  {len(all_signals)} total ({len(buy_signals)} BUY, {len(sell_signals)} SELL)")
+        print(f"  Trades placed:  {len(trades_placed)}")
+        print(f"    - Buys:  {len(buy_trades)}")
+        print(f"    - Sells: {len(sell_trades)}")
 
-    print(f"\n  Trade details:")
-    for t in trades_placed:
-        pnl_str = f" | PnL: ${t.get('pnl', 0):+.2f}" if t.get("pnl", 0) != 0 else ""
-        print(f"    {t['action']:4s} {t['symbol']:10s} | {t.get('strategy', '?'):25s} | "
-              f"qty={t.get('qty', 0):.6f} @ ${t.get('price', 0):>10,.4f} | "
-              f"{t.get('signal_type', '?')}{pnl_str}")
+        total_bought = sum(t.get("notional", 0) for t in buy_trades)
+        total_pnl = sum(t.get("pnl", 0) for t in sell_trades)
+        print(f"  Total bought: ${total_bought:,.2f}")
+        if sell_trades:
+            print(f"  Total realized PnL: ${total_pnl:+,.2f}")
 
-    # Count total trades in log
-    try:
-        with open(TRADES_LOG, "r") as f:
-            total_log_entries = sum(1 for line in f if line.strip())
-        print(f"\n  Total trades in log: {total_log_entries}")
-        trade_entries = sum(1 for line in open(TRADES_LOG) if '"action"' in line and '"BUY"' in line or '"SELL"' in line)
-        print(f"  Self-improvement needs: 30 trades (working toward it)")
-    except Exception:
-        pass
+        print(f"\n  Trade details:")
+        for t in trades_placed:
+            pnl_str = f" | PnL: ${t.get('pnl', 0):+.2f}" if t.get("pnl", 0) != 0 else ""
+            print(f"    {t['action']:4s} {t['symbol']:10s} | {t.get('strategy', '?'):25s} | "
+                  f"qty={t.get('qty', 0):.6f} @ ${t.get('price', 0):>10,.4f} | "
+                  f"{t.get('signal_type', '?')}{pnl_str}")
 
-    regime_str = f"{regime} (composite: {composite})" if regime_data else "UNKNOWN"
-    print(f"\n  Regime: {regime_str}")
-    print(f"  Next run: Schedule this script to run every 1-4 hours for continuous crypto signals")
-    print("=" * 70)
+        # Count total trades in log
+        try:
+            with open(TRADES_LOG, "r") as f:
+                total_log_entries = sum(1 for line in f if line.strip())
+            print(f"\n  Total trades in log: {total_log_entries}")
+            trade_entries = sum(1 for line in open(TRADES_LOG) if '"action"' in line and '"BUY"' in line or '"SELL"' in line)
+            print(f"  Self-improvement needs: 30 trades (working toward it)")
+        except Exception:
+            pass
+
+        regime_str = f"{regime} (composite: {composite})" if regime_data else "UNKNOWN"
+        print(f"\n  Regime: {regime_str}")
+        print(f"  Next run: Schedule this script to run every 1-4 hours for continuous crypto signals")
+        print("=" * 70)
 
     return trades_placed
 

@@ -7,7 +7,7 @@ the floor, executes a market sell for the full position. Handles both
 crypto (24/7) and equity (market hours only) stops.
 
 Usage:
-    python scripts/trailing_stop_monitor.py
+    python scripts/trailing_stop_monitor.py [--quiet]
 
 Reads:  state/trailing_stops.json, config/strategy_params.json
 Writes: state/trailing_stops.json (atomic), logs/trades.jsonl (append)
@@ -28,6 +28,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from atomic_write import atomic_write_json, atomic_read_json
+
+# ---------------------------------------------------------------------------
+# Quiet mode: suppress verbose output when nothing actionable happens
+# ---------------------------------------------------------------------------
+QUIET = "--quiet" in sys.argv
 
 STATE_FILE = PROJECT_ROOT / "state" / "trailing_stops.json"
 RISK_STATE_FILE = PROJECT_ROOT / "state" / "risk_state.json"
@@ -171,14 +176,16 @@ def reconcile_quantities(active_stops: list) -> list:
 
         pos = pos_by_symbol.get(sym) or pos_by_symbol.get(flat_sym)
         if pos is None:
-            print(f"  WARNING: No Alpaca position found for {sym} — stop may be stale")
+            if not QUIET:
+                print(f"  WARNING: No Alpaca position found for {sym} — stop may be stale")
             continue
 
         alpaca_qty = abs(float(pos.qty))
         local_qty = float(stop["qty"])
 
         if abs(alpaca_qty - local_qty) > 1e-9:
-            print(f"  RECONCILE: {sym} qty updated {local_qty} -> {alpaca_qty}")
+            if not QUIET:
+                print(f"  RECONCILE: {sym} qty updated {local_qty} -> {alpaca_qty}")
             stop["qty"] = alpaca_qty
 
     return active_stops
@@ -423,7 +430,8 @@ def check_pending_fills(active_stops: list) -> list:
             # Do not add to updated list — effectively removes the stop
             continue
         else:
-            print(f"  PENDING: {symbol} order {order_id} status={status}")
+            if not QUIET:
+                print(f"  PENDING: {symbol} order {order_id} status={status}")
 
         updated.append(stop)
 
@@ -455,7 +463,8 @@ def load_risk_state() -> dict:
         "circuit_breaker_at": None,
     }
     atomic_write_json(str(RISK_STATE_FILE), default_state)
-    print(f"  Created risk_state.json (peak_equity=${current_equity:,.2f})")
+    if not QUIET:
+        print(f"  Created risk_state.json (peak_equity=${current_equity:,.2f})")
     return default_state
 
 
@@ -500,7 +509,8 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
     drawdown_pct = round(drawdown_pct, 2)
     risk_state["current_drawdown_pct"] = drawdown_pct
 
-    print(f"  Equity: ${current_equity:,.2f} | Peak: ${peak_equity:,.2f} | Drawdown: -{drawdown_pct:.2f}%")
+    if not QUIET:
+        print(f"  Equity: ${current_equity:,.2f} | Peak: ${peak_equity:,.2f} | Drawdown: -{drawdown_pct:.2f}%")
 
     # --- Emergency recovery check ---
     if was_emergency and drawdown_pct < (MAX_DRAWDOWN_PCT - 3.0):
@@ -645,14 +655,16 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
 
         # Equity stops can only fire during market hours
         if not crypto and not equity_market_open:
-            print(f"  {symbol}: equity market closed — skipping (floor=${stop['floor_price']:.4f})")
+            if not QUIET:
+                print(f"  {symbol}: equity market closed — skipping (floor=${stop['floor_price']:.4f})")
             still_active.append(stop)
             continue
 
         # Fetch live price
         current_price = get_current_price(stop)
         if current_price is None:
-            print(f"  {symbol}: could not get price — skipping")
+            if not QUIET:
+                print(f"  {symbol}: could not get price — skipping")
             still_active.append(stop)
             continue
 
@@ -670,12 +682,15 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 old_floor = floor_price
                 stop["floor_price"] = new_floor
                 floor_price = new_floor
-                print(f"  {symbol}: NEW HIGH ${current_price:.4f} — floor raised ${old_floor:.4f} -> ${new_floor:.4f}")
+                if not QUIET:
+                    print(f"  {symbol}: NEW HIGH ${current_price:.4f} — floor raised ${old_floor:.4f} -> ${new_floor:.4f}")
             else:
-                print(f"  {symbol}: new high ${current_price:.4f} but floor unchanged at ${floor_price:.4f}")
+                if not QUIET:
+                    print(f"  {symbol}: new high ${current_price:.4f} but floor unchanged at ${floor_price:.4f}")
         else:
             pct_above_floor = ((current_price - floor_price) / floor_price) * 100 if floor_price else 0
-            print(f"  {symbol}: ${current_price:.4f} (floor=${floor_price:.4f}, {pct_above_floor:+.2f}% above floor)")
+            if not QUIET:
+                print(f"  {symbol}: ${current_price:.4f} (floor=${floor_price:.4f}, {pct_above_floor:+.2f}% above floor)")
 
         # --- Profit-taking tiers (BEFORE floor breach check) ---
         # Skipped during emergency mode — no new entries or profit-taking
@@ -701,7 +716,8 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                         sell_qty = round(sell_qty, 8)
 
                     if sell_qty <= 0:
-                        print(f"  PROFIT TAKE SKIP: {symbol} +{gain_pct:.1f}% — sell_qty rounds to 0")
+                        if not QUIET:
+                            print(f"  PROFIT TAKE SKIP: {symbol} +{gain_pct:.1f}% — sell_qty rounds to 0")
                         continue
 
                     order = execute_partial_sell(stop, sell_qty)
@@ -934,11 +950,12 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
 # ---------------------------------------------------------------------------
 def main() -> int:
     now = datetime.now(timezone.utc)
-    print("=" * 70)
-    print(f"ATLAS Lite Trailing Stop Monitor")
-    print(f"Run at: {now.isoformat()}")
-    print(f"Paper mode: {PAPER}")
-    print("=" * 70)
+    if not QUIET:
+        print("=" * 70)
+        print(f"ATLAS Lite Trailing Stop Monitor")
+        print(f"Run at: {now.isoformat()}")
+        print(f"Paper mode: {PAPER}")
+        print("=" * 70)
 
     # --- Load state ---
     state = atomic_read_json(str(STATE_FILE))
@@ -948,30 +965,38 @@ def main() -> int:
 
     active_stops = state.get("active_stops", [])
     closed_stops = state.get("closed_stops", [])
-    print(f"\nLoaded {len(active_stops)} active stops, {len(closed_stops)} closed stops")
+    if not QUIET:
+        print(f"\nLoaded {len(active_stops)} active stops, {len(closed_stops)} closed stops")
 
     if not active_stops:
-        print("No active stops to monitor. Exiting.")
+        if QUIET:
+            print("[QUIET] 0 positions checked, 0 actions taken")
+        else:
+            print("No active stops to monitor. Exiting.")
         return 0
 
     # --- Check equity market hours once ---
     equity_market_open = market_is_open()
-    print(f"Equity market open: {equity_market_open}")
+    if not QUIET:
+        print(f"Equity market open: {equity_market_open}")
 
     # --- Step 1: Handle PENDING_FILL stops ---
     pending_count = sum(1 for s in active_stops if s.get("status") == "PENDING_FILL")
     if pending_count > 0:
-        print(f"\n--- Checking {pending_count} PENDING_FILL orders ---")
+        if not QUIET:
+            print(f"\n--- Checking {pending_count} PENDING_FILL orders ---")
         active_stops = check_pending_fills(active_stops)
 
     # --- Step 2: Reconcile quantities with Alpaca ---
     active_count = sum(1 for s in active_stops if s.get("status") == "ACTIVE")
     if active_count > 0:
-        print(f"\n--- Reconciling quantities for {active_count} ACTIVE stops ---")
+        if not QUIET:
+            print(f"\n--- Reconciling quantities for {active_count} ACTIVE stops ---")
         active_stops = reconcile_quantities(active_stops)
 
     # --- Step 3: Drawdown check + emergency mode ---
-    print(f"\n--- Checking portfolio drawdown (max: {MAX_DRAWDOWN_PCT}%) ---")
+    if not QUIET:
+        print(f"\n--- Checking portfolio drawdown (max: {MAX_DRAWDOWN_PCT}%) ---")
     emergency_mode, active_stops, closed_stops = check_drawdown_and_emergency(
         active_stops, closed_stops
     )
@@ -997,12 +1022,13 @@ def main() -> int:
         return 0
 
     # --- Step 4: Process active stops (price check + trail + profit-take + ladder + sell) ---
-    print(f"\n--- Processing trailing stops ---")
-    print(f"  Profit-taking: {'ENABLED' if PROFIT_TAKING_ENABLED else 'DISABLED'} "
-          f"({len(PROFIT_TIERS)} tiers)")
-    print(f"  Ladder buys:   {'ENABLED' if LADDER_BUY_ENABLED else 'DISABLED'} "
-          f"({len(LADDER_LEVELS)} levels, equity only)")
-    print(f"  Circuit breaker: max {MAX_STOPS_PER_RUN} stops per run")
+    if not QUIET:
+        print(f"\n--- Processing trailing stops ---")
+        print(f"  Profit-taking: {'ENABLED' if PROFIT_TAKING_ENABLED else 'DISABLED'} "
+              f"({len(PROFIT_TIERS)} tiers)")
+        print(f"  Ladder buys:   {'ENABLED' if LADDER_BUY_ENABLED else 'DISABLED'} "
+              f"({len(LADDER_LEVELS)} levels, equity only)")
+        print(f"  Circuit breaker: max {MAX_STOPS_PER_RUN} stops per run")
     active_stops, closed_stops, sells, profit_takes, ladder_buys = process_active_stops(
         active_stops, closed_stops, equity_market_open, emergency_mode=emergency_mode
     )
@@ -1021,16 +1047,21 @@ def main() -> int:
     # --- Summary ---
     final_active = len([s for s in active_stops if s.get("status") == "ACTIVE"])
     final_pending = len([s for s in active_stops if s.get("status") == "PENDING_FILL"])
-    print(f"\n{'=' * 70}")
-    print(f"SUMMARY")
-    print(f"  Sells executed:    {sells}")
-    print(f"  Profit takes:      {profit_takes}")
-    print(f"  Ladder buys:       {ladder_buys}")
-    print(f"  Active stops:      {final_active}")
-    print(f"  Pending fills:     {final_pending}")
-    print(f"  Total closed:      {len(closed_stops)}")
-    print(f"  State saved:       {STATE_FILE}")
-    print(f"{'=' * 70}")
+    total_actions = sells + profit_takes + ladder_buys
+
+    if QUIET and total_actions == 0:
+        print(f"[QUIET] {final_active} positions checked, 0 actions taken")
+    else:
+        print(f"\n{'=' * 70}")
+        print(f"SUMMARY")
+        print(f"  Sells executed:    {sells}")
+        print(f"  Profit takes:      {profit_takes}")
+        print(f"  Ladder buys:       {ladder_buys}")
+        print(f"  Active stops:      {final_active}")
+        print(f"  Pending fills:     {final_pending}")
+        print(f"  Total closed:      {len(closed_stops)}")
+        print(f"  State saved:       {STATE_FILE}")
+        print(f"{'=' * 70}")
 
     return 0
 
