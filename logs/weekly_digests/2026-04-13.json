@@ -1,0 +1,250 @@
+{
+  "week_of": "2026-04-13",
+  "generated_at": "2026-04-13T12:48:21.490834+00:00",
+  "account": {
+    "equity": 128805.62,
+    "cash": 20088.53,
+    "buying_power": 20088.53,
+    "portfolio_value": 128805.62,
+    "status": "LOCAL_FALLBACK"
+  },
+  "positions": [
+    {
+      "symbol": "AVAXUSD",
+      "qty": 764.237685483,
+      "avg_entry_price": 9.142840172,
+      "current_price": 9.14646,
+      "market_value": 6990.069421,
+      "unrealized_pl": 2.766409,
+      "asset_class": "AssetClass.CRYPTO"
+    },
+    {
+      "symbol": "BTCUSD",
+      "qty": 0.350485957,
+      "avg_entry_price": 72430.248336577,
+      "current_price": 71357.29,
+      "market_value": 25009.728075,
+      "unrealized_pl": -376.056829,
+      "asset_class": "AssetClass.CRYPTO"
+    },
+    {
+      "symbol": "DOGEUSD",
+      "qty": 76516.771385281,
+      "avg_entry_price": 0.091410596,
+      "current_price": 0.0914114,
+      "market_value": 6994.505196,
+      "unrealized_pl": 0.06152,
+      "asset_class": "AssetClass.CRYPTO"
+    },
+    {
+      "symbol": "ETHUSD",
+      "qty": 11.324160143,
+      "avg_entry_price": 2242.317317004,
+      "current_price": 2210.5,
+      "market_value": 25032.055996,
+      "unrealized_pl": -360.304393,
+      "asset_class": "AssetClass.CRYPTO"
+    },
+    {
+      "symbol": "LINKUSD",
+      "qty": 794.109423051,
+      "avg_entry_price": 8.808231484,
+      "current_price": 8.83091,
+      "market_value": 7012.708845,
+      "unrealized_pl": 18.009223,
+      "asset_class": "AssetClass.CRYPTO"
+    },
+    {
+      "symbol": "SOLUSD",
+      "qty": 96.658972069,
+      "avg_entry_price": 82.321673778,
+      "current_price": 82.87,
+      "market_value": 8010.129015,
+      "unrealized_pl": 53.000649,
+      "asset_class": "AssetClass.CRYPTO"
+    }
+  ],
+  "week_over_week": {
+    "delta_dollars": 0.0,
+    "delta_pct": 0.0
+  },
+  "trade_aggregates": {
+    "total_trades": 30,
+    "buys": 30,
+    "sells": 0,
+    "realized_pnl": 0.0,
+    "win_rate": null,
+    "best_trade": null,
+    "worst_trade": null
+  },
+  "signal_scoreboard": {
+    "top": [
+      {
+        "name": "borderline_dca",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 8
+      },
+      {
+        "name": "borderline_trend",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 3
+      },
+      {
+        "name": "dca_technical_trigger",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 9
+      }
+    ],
+    "bottom": [
+      {
+        "name": "unknown",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 5
+      },
+      {
+        "name": "portfolio_rebalance",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 3
+      },
+      {
+        "name": "dca_technical_trigger",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 9
+      }
+    ],
+    "all": [
+      {
+        "name": "borderline_dca",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 8
+      },
+      {
+        "name": "borderline_trend",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 3
+      },
+      {
+        "name": "dca_technical_trigger",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 9
+      },
+      {
+        "name": "portfolio_rebalance",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 3
+      },
+      {
+        "name": "unknown",
+        "grade": "INSUFFICIENT_DATA",
+        "win_rate": 0.0,
+        "avg_pnl": 0.0,
+        "total_pnl": 0,
+        "total_trades": 5
+      }
+    ]
+  },
+  "strategy_performance": {
+    "CRYPTO_DCA": {
+      "trades": 17,
+      "total_pnl": 0.0,
+      "win_rate": null,
+      "sharpe": 0.0
+    },
+    "CRYPTO_REBALANCE": {
+      "trades": 3,
+      "total_pnl": 0.0,
+      "win_rate": null,
+      "sharpe": 0.0
+    },
+    "CRYPTO_TREND": {
+      "trades": 3,
+      "total_pnl": 0.0,
+      "win_rate": null,
+      "sharpe": 0.0
+    },
+    "TRAILING_STOP": {
+      "trades": 7,
+      "total_pnl": 0.0,
+      "win_rate": null,
+      "sharpe": 0.0
+    }
+  },
+  "self_improvement": {
+    "available": true,
+    "engine_status": "RUNNING_EXPERIMENT",
+    "engine_status_reason": "Testing loss_pct=5.4642 (was 5.0)",
+    "current_experiment": {
+      "id": "exp_20260412_645",
+      "strategy": "TRAILING_STOP",
+      "parameter": "loss_pct",
+      "config_section": "trailing_stop",
+      "original_value": 5.0,
+      "test_value": 5.4642,
+      "bounds": [
+        3.0,
+        15.0
+      ],
+      "baseline_sharpe": 0.0,
+      "status": "RUNNING",
+      "started_at": "2026-04-12T21:37:29.398709+00:00",
+      "eval_until": "2026-04-17T21:37:29.398709+00:00"
+    },
+    "statistics": {
+      "total_experiments": 1,
+      "accepted": 0,
+      "rejected": 0,
+      "acceptance_rate": 0
+    },
+    "last_completed": null
+  },
+  "risk_status": {
+    "available": true,
+    "peak_equity": 99137.71,
+    "peak_date": "2026-04-12T21:24:15.082300+00:00",
+    "current_drawdown_pct": 0.0,
+    "emergency_mode": false,
+    "emergency_triggered_at": null,
+    "circuit_breaker_hit": false,
+    "circuit_breaker_at": null
+  },
+  "regime": {
+    "current_regime": "RISK_ON",
+    "composite_score": 0.65,
+    "last_updated": "2026-04-11T18:28:37.859359+00:00"
+  },
+  "recommendations": [
+    "Cash reserve low (15.6%) -- approaching 20% minimum",
+    "Monitor BTCUSD position -- largest unrealized loss $-376.06",
+    "No sells this week -- need closed trades for meaningful Sharpe calculation"
+  ]
+}

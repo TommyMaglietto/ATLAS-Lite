@@ -578,6 +578,8 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
                 "signal_type": "max_drawdown_emergency",
                 "drawdown_pct": drawdown_pct,
                 "max_drawdown_limit": MAX_DRAWDOWN_PCT,
+                "exit_reason": "emergency_drawdown",
+                "exit_type": "max_drawdown_breach",
             })
 
             # Move to closed
@@ -729,6 +731,8 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                         "signal_type": "profit_tier",
                         "tier_gain_pct": tier_gain,
                         "tier_sell_pct": tier_sell_pct,
+                        "exit_reason": "profit_take",
+                        "exit_type": f"tier_{tier['gain_pct']}pct",
                     })
 
                     # Update stop qty and mark tier as hit
@@ -797,6 +801,8 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                             "new_qty": new_qty,
                             "signal_type": "ladder_buy",
                             "level_drop_pct": level_drop,
+                            "entry_reason": "ladder_buy",
+                            "entry_type": f"drop_{level['drop_pct']}pct",
                             "cost_basis": round(new_cost, 2),
                             "pnl": 0,
                         })
@@ -888,6 +894,8 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 "floor_price": floor_price,
                 "highest_price": float(stop["highest_price"]),
                 "trail_pct": trail_pct,
+                "exit_reason": "trailing_stop_triggered",
+                "exit_type": "floor_breach",
             })
 
             # Move to closed

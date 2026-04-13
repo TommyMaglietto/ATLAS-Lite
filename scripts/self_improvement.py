@@ -341,7 +341,15 @@ def phase_baseline(experiments, strategy_params):
     """
     eval_days = strategy_params.get("self_improvement", {}).get("eval_period_days", 5)
     trades = load_trades(str(TRADES_FILE))
-    strategy_metrics = calculate_metrics_by_strategy(trades, days=eval_days)
+
+    # Try enhanced metrics first, fall back to basic
+    try:
+        from metrics import calculate_enhanced_metrics_by_strategy
+        strategy_metrics = calculate_enhanced_metrics_by_strategy(trades, days=eval_days)
+        log("Using enhanced metrics (realized + unrealized P&L)")
+    except (ImportError, AttributeError, Exception) as e:
+        strategy_metrics = calculate_metrics_by_strategy(trades, days=eval_days)
+        log(f"Using basic metrics (realized only): {e}")
 
     if not strategy_metrics:
         log("No strategy metrics available (no recent trades by strategy).")
@@ -392,10 +400,113 @@ def phase_baseline(experiments, strategy_params):
 
 
 # ---------------------------------------------------------------------------
+# Directional learning helpers (used by Phase 3)
+# ---------------------------------------------------------------------------
+
+def get_mutation_direction(param_name, strategy, completed_experiments):
+    """
+    Learn from past experiments which direction to push a parameter.
+    Returns a bias factor: positive means increase worked, negative means decrease worked.
+
+    Logic:
+    - Look at all completed experiments for this param+strategy combo
+    - If increasing was ACCEPTED: bias toward increase
+    - If decreasing was ACCEPTED: bias toward decrease
+    - If both rejected: try the direction not yet tried, or use larger mutation
+    - If no history: return 0 (no bias, fully random)
+
+    Returns: float in [-1, 1] where:
+        +1 = strongly bias toward increase
+        -1 = strongly bias toward decrease
+         0 = no bias (random)
+    """
+    history = []
+    for exp in completed_experiments:
+        if exp.get("parameter") == param_name and exp.get("strategy") == strategy:
+            direction = "increase" if exp.get("test_value", 0) > exp.get("original_value", 0) else "decrease"
+            outcome = exp.get("status")  # ACCEPTED or REJECTED
+            history.append({"direction": direction, "outcome": outcome,
+                          "sharpe_improvement": exp.get("sharpe_improvement", 0)})
+
+    if not history:
+        return 0.0  # No data, fully random
+
+    # Score each direction
+    increase_score = 0
+    decrease_score = 0
+    for h in history:
+        weight = 1.0
+        if h["direction"] == "increase":
+            if h["outcome"] == "ACCEPTED":
+                increase_score += weight
+            else:
+                increase_score -= weight * 0.5  # Penalize less than we reward
+        else:
+            if h["outcome"] == "ACCEPTED":
+                decrease_score += weight
+            else:
+                decrease_score -= weight * 0.5
+
+    total = abs(increase_score) + abs(decrease_score)
+    if total == 0:
+        return 0.0
+
+    # Normalize to [-1, 1]
+    bias = (increase_score - decrease_score) / total
+    return round(bias, 3)
+
+
+def select_parameter(valid_params, strategy, completed_experiments):
+    """
+    Select which parameter to mutate. Prefer:
+    1. Parameters never tested before (exploration)
+    2. Parameters with mixed results (worth retrying with different direction)
+    3. Parameters that have been consistently rejected (avoid)
+    """
+    tested_params = {}
+    for exp in completed_experiments:
+        if exp.get("strategy") == strategy:
+            p = exp.get("parameter")
+            if p not in tested_params:
+                tested_params[p] = {"accepted": 0, "rejected": 0}
+            if exp.get("status") == "ACCEPTED":
+                tested_params[p]["accepted"] += 1
+            elif exp.get("status") == "REJECTED":
+                tested_params[p]["rejected"] += 1
+
+    # Score each param: higher = more worth testing
+    scored = []
+    for p in valid_params:
+        if p not in tested_params:
+            score = 10  # Never tested -- highest priority (exploration)
+        else:
+            t = tested_params[p]
+            if t["accepted"] > t["rejected"]:
+                score = 7  # Previously successful -- worth optimizing further
+            elif t["accepted"] > 0:
+                score = 5  # Mixed results -- might find the right direction
+            elif t["rejected"] <= 2:
+                score = 3  # A few rejections -- give it another chance
+            else:
+                score = 1  # Consistently rejected -- low priority
+        scored.append((p, score))
+
+    # Weighted random selection (don't purely pick highest -- maintain exploration)
+    total_score = sum(s for _, s in scored)
+    r = random.uniform(0, total_score)
+    cumulative = 0
+    for p, s in scored:
+        cumulative += s
+        if r <= cumulative:
+            return p
+    return scored[-1][0]  # fallback
+
+
+# ---------------------------------------------------------------------------
 # Phase 3: Experiment Design
 # ---------------------------------------------------------------------------
 
-def phase_design(weakest_strategy, strategy_metrics, strategy_params, experiment_id):
+def phase_design(weakest_strategy, strategy_metrics, strategy_params, experiment_id, experiments):
     """
     Select one parameter from the weakest strategy and mutate it.
     Returns experiment record dict, or None if the strategy has no tunable params.
@@ -416,8 +527,9 @@ def phase_design(weakest_strategy, strategy_metrics, strategy_params, experiment
         log(f"No valid tunable params found in config section '{section_key}'.")
         return None
 
-    # Pick one at random
-    chosen_param = random.choice(valid_params)
+    # Pick parameter using weighted selection based on experiment history
+    completed = experiments.get("completed_experiments", [])
+    chosen_param = select_parameter(valid_params, weakest_strategy, completed)
     current_value = params_section[chosen_param]
     bounds = get_bounds(params_section, chosen_param)
     lo, hi = bounds
@@ -425,8 +537,24 @@ def phase_design(weakest_strategy, strategy_metrics, strategy_params, experiment
     max_change_pct = strategy_params.get("self_improvement", {}).get("max_param_change_pct", 20)
     eval_days = strategy_params.get("self_improvement", {}).get("eval_period_days", 5)
 
-    # Mutate: new_value = current_value * (1 + random_change)
-    random_change = random.uniform(-max_change_pct / 100, max_change_pct / 100)
+    # Get directional bias from experiment history
+    bias = get_mutation_direction(chosen_param, weakest_strategy, completed)
+
+    if abs(bias) > 0.3:
+        # Strong historical signal -- bias the mutation direction
+        if bias > 0:
+            # Increase worked before -- random in [0, max_change]
+            random_change = random.uniform(0, max_change_pct / 100)
+            log(f"  Direction bias: INCREASE (bias={bias:+.3f}, based on past experiments)")
+        else:
+            # Decrease worked before -- random in [-max_change, 0]
+            random_change = random.uniform(-max_change_pct / 100, 0)
+            log(f"  Direction bias: DECREASE (bias={bias:+.3f}, based on past experiments)")
+    else:
+        # No strong signal -- explore randomly
+        random_change = random.uniform(-max_change_pct / 100, max_change_pct / 100)
+        log(f"  Direction bias: NONE (bias={bias:+.3f}, exploring randomly)")
+
     new_value = current_value * (1 + random_change)
 
     # Clamp to bounds
@@ -455,6 +583,8 @@ def phase_design(weakest_strategy, strategy_metrics, strategy_params, experiment
         "test_value": new_value,
         "bounds": list(bounds),
         "baseline_sharpe": baseline_sharpe,
+        "mutation_direction": "increase" if new_value > current_value else "decrease",
+        "direction_bias": bias,
         "status": "DESIGNED",
         "started_at": start_time.isoformat(),
         "eval_until": eval_until.isoformat(),
@@ -542,9 +672,15 @@ def phase_evaluate(experiments, strategy_params):
     )
     eval_days = strategy_params.get("self_improvement", {}).get("eval_period_days", 5)
 
-    # Calculate new metrics
+    # Calculate new metrics -- try enhanced first, fall back to basic
     trades = load_trades(str(TRADES_FILE))
-    strategy_metrics = calculate_metrics_by_strategy(trades, days=eval_days)
+    try:
+        from metrics import calculate_enhanced_metrics_by_strategy
+        strategy_metrics = calculate_enhanced_metrics_by_strategy(trades, days=eval_days)
+        log("Using enhanced metrics (realized + unrealized P&L)")
+    except (ImportError, AttributeError, Exception) as e:
+        strategy_metrics = calculate_metrics_by_strategy(trades, days=eval_days)
+        log(f"Using basic metrics (realized only): {e}")
     new_metrics = strategy_metrics.get(strategy, {})
     new_sharpe = new_metrics.get("sharpe", 0.0)
     sharpe_diff = new_sharpe - baseline_sharpe
@@ -735,7 +871,7 @@ def main():
     # Phase 3: Design
     log("-" * 40)
     log("Phase 3: Experiment design")
-    experiment = phase_design(weakest, strategy_metrics, strategy_params, experiment_id)
+    experiment = phase_design(weakest, strategy_metrics, strategy_params, experiment_id, experiments)
     if experiment is None:
         log("Could not design experiment (no tunable params). Aborting.")
         return

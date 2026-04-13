@@ -126,6 +126,61 @@ def load_params():
 
 
 # ============================================================
+# ENTRY ATTRIBUTION HELPERS
+# ============================================================
+
+def _score_entry_quality(signal, regime_data):
+    """Score entry quality 0-100 based on signal strength, regime, and indicators."""
+    score = 50  # base
+
+    # Signal strength
+    strength = signal.get("strength", "WEAK")
+    if strength == "STRONG":
+        score += 20
+    elif strength == "MODERATE":
+        score += 10
+    elif strength == "WEAK":
+        score -= 10
+
+    # Regime bonus
+    if regime_data:
+        regime = regime_data.get("current_regime", "UNKNOWN")
+        if regime == "RISK_ON":
+            score += 10
+        elif regime == "CAUTIOUS":
+            score -= 5
+
+    # ADX confirmation
+    indicators = signal.get("indicators", {})
+    adx = indicators.get("adx")
+    if adx is not None:
+        strategy = signal.get("strategy", "")
+        if "TREND" in strategy and adx > 25:
+            score += 10  # Trending + trend strategy = good
+        elif "MEAN_REVERSION" in strategy and adx < 20:
+            score += 10  # Ranging + mean reversion = good
+        elif "MEAN_REVERSION" in strategy and adx > 30:
+            score -= 15  # Trending + mean reversion = bad
+
+    # RSI positioning
+    rsi = indicators.get("rsi")
+    if rsi is not None:
+        if 30 < rsi < 70:
+            score += 5  # Not extreme — healthy entry
+        elif rsi < 25 or rsi > 75:
+            score -= 5  # Extreme — risky
+
+    return max(0, min(100, score))
+
+
+def _get_signal_grade(signal_type, signal_scores):
+    """Look up the grade for this signal type from the scoreboard."""
+    if not signal_scores or "signal_scoreboard" not in signal_scores:
+        return "UNGRADED"
+    return signal_scores.get("signal_scoreboard", {}).get(signal_type, {}).get("grade", "UNGRADED")
+
+
+# ============================================================
 # INDICATOR CALCULATIONS
 # ============================================================
 
@@ -655,6 +710,20 @@ def main():
 
     print(f"Watchlist: {', '.join(CRYPTO_WATCHLIST)}")
 
+    # Load signal quality scores (if available)
+    SIGNAL_SCORES_FILE = STATE_DIR / "signal_scores.json"
+    signal_scores = atomic_read_json(str(SIGNAL_SCORES_FILE))
+    disabled_signals = set()
+    if signal_scores and "signal_scoreboard" in signal_scores:
+        for sig_name, score in signal_scores["signal_scoreboard"].items():
+            if score.get("grade") == "F" and score.get("closed_trades", 0) >= 5:
+                disabled_signals.add(sig_name)
+                print(f"  Signal '{sig_name}' DISABLED — F grade ({score.get('win_rate', 0):.0%} win rate)")
+        if not disabled_signals:
+            print(f"  All signals active (scores loaded for {len(signal_scores['signal_scoreboard'])} signals)")
+    else:
+        print(f"  Signal scores not available yet — all signals active")
+
     # ---- Initialize clients ----
     print("\n[1/6] Initializing Alpaca clients...")
     data_client = CryptoHistoricalDataClient()  # No keys needed for crypto data
@@ -846,6 +915,11 @@ def main():
             print(f"\n  BUDGET EXHAUSTED: ${remaining:.2f} remaining, skipping {symbol}")
             break
 
+        # Check signal quality gate
+        if signal.get("signal_type") in disabled_signals:
+            print(f"  SKIPPED: {symbol} — signal '{signal['signal_type']}' is F-grade disabled")
+            continue
+
         trade_size = min(effective_size, remaining)
         print(f"\n  >>> Executing BUY: {symbol} (${trade_size:,.2f})")
         print(f"      Strategy: {signal['strategy']} | Signal: {signal['signal_type']}")
@@ -886,6 +960,11 @@ def main():
                 "signal_strength": signal.get("strength", "UNKNOWN"),
                 "timeframe": signal.get("timeframe", "1H"),
                 "pnl": 0,
+                # Entry attribution
+                "entry_quality": _score_entry_quality(signal, regime_data),
+                "regime_at_entry": regime if regime_data else "UNKNOWN",
+                "regime_composite_at_entry": composite if regime_data else 0,
+                "signal_grade": _get_signal_grade(signal.get("signal_type"), signal_scores),
             }
             trade_record["fill_price"] = fill_price
             trade_record["fill_qty"] = fill_qty
@@ -947,6 +1026,10 @@ def main():
                         "signal_type": signal["signal_type"],
                         "entry_price": entry_price,
                         "pnl": pnl,
+                        # Exit attribution
+                        "exit_reason": "overbought_signal",
+                        "entry_quality": _score_entry_quality(signal, regime_data),
+                        "regime_at_exit": regime if regime_data else "UNKNOWN",
                     }
                     log_trade(trade_record)
                     trades_placed.append(trade_record)
