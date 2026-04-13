@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-04-12T21:37:29.398742+00:00",
+  "last_updated": "2026-04-13T18:29:10.777480+00:00",
   "trailing_stop": {
     "enabled": true,
     "loss_pct": 5.4642,
@@ -30,6 +30,10 @@
     ],
     "profit_taking_enabled": true,
     "profit_tiers": [
+      {
+        "gain_pct": 5,
+        "sell_pct": 10
+      },
       {
         "gain_pct": 10,
         "sell_pct": 15
@@ -77,14 +81,15 @@
   },
   "self_improvement": {
     "enabled": true,
-    "eval_period_days": 5,
-    "min_trades_before_commit": 30,
-    "min_sharpe_improvement": 0.1,
+    "eval_min_days": 2,
+    "eval_max_days": 7,
+    "eval_trade_target": 8,
+    "min_trades_for_experiment": 3,
     "max_param_change_pct": 20,
-    "cooldown_between_experiments_hours": 24,
+    "cooldown_hours_per_slot": 12,
     "walk_forward_train_days": 60,
     "walk_forward_test_days": 20,
-    "schedule": "Sunday 8PM ET"
+    "schedule": "Every 3 days"
   },
   "regime_filter": {
     "enabled": true,
@@ -121,7 +126,7 @@
       "AVAX/USD",
       "LINK/USD"
     ],
-    "position_size_usd": 2500,
+    "position_size_usd": 4000,
     "position_size_bounds": [
       1000,
       5000
@@ -133,7 +138,7 @@
       3.0
     ],
     "rsi_period": 14,
-    "rsi_oversold": 35,
+    "rsi_oversold": 38,
     "rsi_oversold_bounds": [
       25,
       40
