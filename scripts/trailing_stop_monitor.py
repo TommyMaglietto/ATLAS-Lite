@@ -18,7 +18,7 @@ import json
 import os
 import sys
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -27,7 +27,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from atomic_write import atomic_write_json, atomic_read_json
+from atomic_write import atomic_write_json, atomic_read_json, normalize_crypto_symbol, file_lock
+from resilience import acquire_pid_lock, configure_client_timeouts, validate_min_qty
 
 # ---------------------------------------------------------------------------
 # Quiet mode: suppress verbose output when nothing actionable happens
@@ -50,11 +51,15 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
-from alpaca.data.requests import CryptoLatestQuoteRequest, StockLatestQuoteRequest
+from alpaca.data.requests import CryptoLatestQuoteRequest, StockLatestQuoteRequest, CryptoBarsRequest
+from alpaca.data.timeframe import TimeFrame
+import numpy as np
+import pandas as pd
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=PAPER)
 crypto_data = CryptoHistoricalDataClient()  # No keys needed
 stock_data = StockHistoricalDataClient(API_KEY, SECRET_KEY)
+configure_client_timeouts(trading_client)
 
 
 # ---------------------------------------------------------------------------
@@ -85,9 +90,28 @@ def load_risk_params() -> dict:
 STRATEGY_PARAMS = load_strategy_params()
 RISK_PARAMS = load_risk_params()
 
+
+def load_15m_params():
+    """Load 15-min specific params for trailing stop management."""
+    try:
+        with open(PARAMS_FILE, "r", encoding="utf-8") as f:
+            params = json.load(f)
+        cs = params.get("crypto_strategy_15m", {})
+        return {
+            "trail_pct": cs.get("shared", {}).get("trail_pct", 2.0),
+            "full_close_after_tiers": 2,  # Faster cycling: 2 tiers instead of 3
+            "trail_decay_per_day": cs.get("shared", {}).get("trail_decay_per_day", 1.0),
+        }
+    except Exception:
+        return {"trail_pct": 2.0, "full_close_after_tiers": 2, "trail_decay_per_day": 1.0}
+
+
+PARAMS_15M = load_15m_params()
+
 # Profit-taking config (from strategy_params.json or defaults)
 PROFIT_TAKING_ENABLED = STRATEGY_PARAMS.get("profit_taking_enabled", True)
 PROFIT_TIERS = STRATEGY_PARAMS.get("profit_tiers", [
+    {"gain_pct": 5, "sell_pct": 10},
     {"gain_pct": 10, "sell_pct": 15},
     {"gain_pct": 20, "sell_pct": 20},
     {"gain_pct": 35, "sell_pct": 25},
@@ -104,7 +128,70 @@ LADDER_LEVELS = STRATEGY_PARAMS.get("ladder_levels", [
 # Risk config
 CASH_RESERVE_PCT = RISK_PARAMS.get("cash_reserve_pct", 20.0)
 MAX_DRAWDOWN_PCT = RISK_PARAMS.get("max_drawdown_pct", 15.0)
+EMERGENCY_RECOVERY_BUFFER_PCT = RISK_PARAMS.get("emergency_recovery_buffer_pct", 3.0)
 MAX_STOPS_PER_RUN = RISK_PARAMS.get("max_stops_per_run", 3)  # Circuit breaker limit
+
+
+# ---------------------------------------------------------------------------
+# Adaptive slippage model (Phase 6)
+# ---------------------------------------------------------------------------
+
+def get_slippage_pct(symbol):
+    """Read per-asset slippage from the model, or use default."""
+    model_file = PROJECT_ROOT / "state" / "slippage_model.json"
+    model = atomic_read_json(str(model_file))
+    if model and symbol in model.get("assets", {}):
+        return model["assets"][symbol].get("ema_slippage_pct", 0.10) / 100
+    return (model or {}).get("default_slippage_pct", 0.10) / 100
+
+
+def compute_exit_indicators(symbol, crypto=True):
+    """Fetch latest 1H bar and compute indicators at exit time.
+    Function-level import to avoid circular deps and module-level side effects."""
+    try:
+        from crypto_strategy import compute_indicators, load_params
+        params = load_params()
+        ip = params.get("shared", params)
+
+        if crypto:
+            req = CryptoBarsRequest(
+                symbol_or_symbols=[symbol],
+                timeframe=TimeFrame.Hour,
+                start=datetime.now(timezone.utc) - timedelta(hours=100),
+                end=datetime.now(timezone.utc),
+            )
+            bars = crypto_data.get_crypto_bars(req)
+        else:
+            from alpaca.data.requests import StockBarsRequest
+            req = StockBarsRequest(
+                symbol_or_symbols=[symbol],
+                timeframe=TimeFrame.Hour,
+                start=datetime.now(timezone.utc) - timedelta(hours=100),
+                end=datetime.now(timezone.utc),
+            )
+            bars = stock_data.get_stock_bars(req)
+
+        symbol_bars = list(bars[symbol])
+        rows = [{"timestamp": b.timestamp, "open": float(b.open), "high": float(b.high),
+                 "low": float(b.low), "close": float(b.close), "volume": float(b.volume)}
+                for b in symbol_bars]
+        df = pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+        if len(df) < 60:
+            return None
+
+        df = compute_indicators(df, ip)
+        latest = df.iloc[-1]
+        return {
+            "rsi": round(float(latest.get("rsi", 0)), 2) if not np.isnan(latest.get("rsi", np.nan)) else None,
+            "bb_position": round(float(latest.get("bb_position", 0)), 4) if not np.isnan(latest.get("bb_position", np.nan)) else None,
+            "adx": round(float(latest.get("adx", 0)), 2) if not np.isnan(latest.get("adx", np.nan)) else None,
+            "vwap": round(float(latest.get("vwap", 0)), 4) if not np.isnan(latest.get("vwap", np.nan)) else None,
+            "ema9": round(float(latest.get("ema9", 0)), 4) if not np.isnan(latest.get("ema9", np.nan)) else None,
+        }
+    except Exception as e:
+        if not QUIET:
+            print(f"  Warning: Could not compute exit indicators for {symbol}: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -117,13 +204,9 @@ def to_alpaca_position_symbol(symbol: str) -> str:
 
 def to_slash_symbol(symbol: str) -> str:
     """Convert flat format to slash format if it looks like crypto: 'BTCUSD' -> 'BTC/USD'.
-    Equities are returned unchanged."""
-    crypto_bases = ("BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK",
-                    "AAVE", "UNI", "DOT", "MATIC", "SHIB")
-    for base in crypto_bases:
-        if symbol.startswith(base) and symbol.endswith("USD") and "/" not in symbol:
-            return f"{base}/USD"
-    return symbol
+    Equities are returned unchanged.
+    Delegates to the shared normalize_crypto_symbol() in atomic_write.py."""
+    return normalize_crypto_symbol(symbol)
 
 
 def is_crypto(stop: dict) -> bool:
@@ -177,16 +260,44 @@ def reconcile_quantities(active_stops: list) -> list:
         pos = pos_by_symbol.get(sym) or pos_by_symbol.get(flat_sym)
         if pos is None:
             if not QUIET:
-                print(f"  WARNING: No Alpaca position found for {sym} — stop may be stale")
+                print(f"  WARNING: No Alpaca position for {sym} -- marking qty=0 for cleanup")
+            stop["qty"] = 0
             continue
 
-        alpaca_qty = abs(float(pos.qty))
-        local_qty = float(stop["qty"])
+        # Count how many stops share this Alpaca position (e.g. 1H + 15M)
+        sibling_count = sum(
+            1 for s in active_stops
+            if s.get("status") == "ACTIVE" and s.get("symbol") == sym and s is not stop
+        )
 
-        if abs(alpaca_qty - local_qty) > 1e-9:
-            if not QUIET:
-                print(f"  RECONCILE: {sym} qty updated {local_qty} -> {alpaca_qty}")
-            stop["qty"] = alpaca_qty
+        if sibling_count == 0:
+            # Single stop for this symbol -- reconcile directly
+            alpaca_qty = abs(float(pos.qty))
+            local_qty = float(stop["qty"])
+
+            if abs(alpaca_qty - local_qty) > 1e-9:
+                if not QUIET:
+                    print(f"  RECONCILE: {sym} qty updated {local_qty} -> {alpaca_qty}")
+                stop["qty"] = alpaca_qty
+        # else: multiple stops share the position -- skip per-stop reconciliation
+        # (validated in aggregate below)
+
+    # After reconciliation, verify total local qty matches Alpaca per symbol
+    by_symbol_total = {}
+    for stop in active_stops:
+        if stop.get("status") != "ACTIVE":
+            continue
+        sym = stop.get("symbol", "")
+        by_symbol_total[sym] = by_symbol_total.get(sym, 0) + float(stop.get("qty", 0))
+
+    for sym, total_local in by_symbol_total.items():
+        flat_sym = to_alpaca_position_symbol(sym)
+        pos = pos_by_symbol.get(sym) or pos_by_symbol.get(flat_sym)
+        if pos:
+            alpaca_qty = abs(float(pos.qty))
+            if abs(total_local - alpaca_qty) > 0.001:
+                if not QUIET:
+                    print(f"  WARNING: {sym} total local qty {total_local:.6f} != Alpaca qty {alpaca_qty:.6f}")
 
     return active_stops
 
@@ -342,13 +453,20 @@ def has_alpaca_position(symbol: str) -> bool:
 # Trade logging
 # ---------------------------------------------------------------------------
 def log_trade(record: dict) -> None:
-    """Append a trade record to logs/trades.jsonl."""
+    """Append a trade record to logs/trades.jsonl with file locking."""
     TRADES_LOG.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(record, default=str) + "\n"
     try:
-        with open(TRADES_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, default=str) + "\n")
-    except Exception as e:
-        print(f"  ERROR: Failed to write trade log: {e}")
+        with file_lock(str(TRADES_LOG)):
+            with open(TRADES_LOG, "a", encoding="utf-8") as f:
+                f.write(line)
+    except Exception:
+        # Fallback: write without lock rather than lose the trade record
+        try:
+            with open(TRADES_LOG, "a", encoding="utf-8") as f:
+                f.write(line)
+        except Exception as e:
+            print(f"  ERROR: Failed to write trade log: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +548,39 @@ def check_pending_fills(active_stops: list) -> list:
             # Do not add to updated list — effectively removes the stop
             continue
         else:
+            # Check for stale PENDING_FILL orders (>48 hours)
+            opened_at_str = stop.get("opened_at")
+            if opened_at_str:
+                try:
+                    opened_at = datetime.fromisoformat(opened_at_str)
+                    age = datetime.now(timezone.utc) - opened_at
+                    if age > timedelta(hours=48):
+                        print(f"  WARNING: PENDING_FILL timeout for {symbol} — order {order_id} "
+                              f"is {age.total_seconds() / 3600:.1f}h old, cancelling")
+                        try:
+                            trading_client.cancel_order_by_id(order_id)
+                            print(f"  CANCELLED stale order {order_id} for {symbol}")
+                        except Exception as cancel_err:
+                            print(f"  WARNING: Failed to cancel stale order {order_id}: {cancel_err}")
+                        log_trade({
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "strategy": "TRAILING_STOP",
+                            "action": "PENDING_FILL_TIMEOUT",
+                            "symbol": symbol,
+                            "asset_class": stop.get("asset_class", "equity"),
+                            "qty": float(stop["qty"]),
+                            "price": 0,
+                            "order_type": "limit",
+                            "order_id": order_id,
+                            "status": "timeout_cancelled",
+                            "age_hours": round(age.total_seconds() / 3600, 1),
+                            "pnl": 0,
+                        })
+                        # Remove from active stops — do not add to updated list
+                        continue
+                except (ValueError, TypeError) as parse_err:
+                    print(f"  WARNING: Could not parse opened_at for {symbol}: {parse_err}")
+
             if not QUIET:
                 print(f"  PENDING: {symbol} order {order_id} status={status}")
 
@@ -513,7 +664,8 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
         print(f"  Equity: ${current_equity:,.2f} | Peak: ${peak_equity:,.2f} | Drawdown: -{drawdown_pct:.2f}%")
 
     # --- Emergency recovery check ---
-    if was_emergency and drawdown_pct < (MAX_DRAWDOWN_PCT - 3.0):
+    recovery_threshold = MAX_DRAWDOWN_PCT - EMERGENCY_RECOVERY_BUFFER_PCT
+    if was_emergency and drawdown_pct < recovery_threshold:
         risk_state["emergency_mode"] = False
         risk_state["emergency_triggered_at"] = None
         save_risk_state(risk_state)
@@ -521,9 +673,9 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
         return False, active_stops, closed_stops
 
     # --- Emergency mode still active but not recovered ---
-    if was_emergency and drawdown_pct >= (MAX_DRAWDOWN_PCT - 3.0):
+    if was_emergency and drawdown_pct >= recovery_threshold:
         save_risk_state(risk_state)
-        print(f"  EMERGENCY MODE STILL ACTIVE: drawdown -{drawdown_pct:.2f}% (need <-{MAX_DRAWDOWN_PCT - 3.0:.1f}% to clear)")
+        print(f"  EMERGENCY MODE STILL ACTIVE: drawdown -{drawdown_pct:.2f}% (need <-{recovery_threshold:.1f}% to clear)")
         print(f"  Skipping all new entries (profit-taking, ladder buys blocked)")
         # Don't trigger emergency sells again, but keep blocking new entries
         return True, active_stops, closed_stops
@@ -568,7 +720,9 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
                 print(f"  ERROR: Emergency sell failed for {symbol} — will retry next run")
                 continue
 
-            pnl = round((sell_price - entry_price) * qty, 2)
+            trade_value = sell_price * qty
+            slippage_cost = round(trade_value * get_slippage_pct(symbol), 2)
+            pnl = round((sell_price - entry_price) * qty - slippage_cost, 2)
             pnl_pct = round(((sell_price - entry_price) / entry_price) * 100, 2) if entry_price else 0
 
             log_trade({
@@ -585,6 +739,7 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
                 "entry_price": entry_price,
                 "pnl": pnl,
                 "pnl_pct": pnl_pct,
+                "slippage_estimate": slippage_cost,
                 "signal_type": "max_drawdown_emergency",
                 "drawdown_pct": drawdown_pct,
                 "max_drawdown_limit": MAX_DRAWDOWN_PCT,
@@ -626,7 +781,7 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
 # Core trailing stop logic
 # ---------------------------------------------------------------------------
 def process_active_stops(active_stops: list, closed_stops: list, equity_market_open: bool,
-                         emergency_mode: bool = False):
+                         emergency_mode: bool = False, schema_version: str = "1.0.0"):
     """Check prices and update trailing logic for each ACTIVE stop.
 
     Order of operations per stop:
@@ -670,7 +825,23 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
 
         highest_price = float(stop["highest_price"])
         floor_price = float(stop["floor_price"])
-        trail_pct = float(stop.get("trail_pct", 5.0))
+        timeframe = stop.get("timeframe", "1H")
+
+        # Use timeframe-specific trail_pct and full_close threshold
+        if timeframe == "15M":
+            trail_pct = PARAMS_15M.get("trail_pct", 2.0)
+            full_close_threshold_for_stop = PARAMS_15M.get("full_close_after_tiers", 2)
+            # Sync the stop's trail_pct with 15M config
+            if float(stop.get("trail_pct", 5.0)) != trail_pct:
+                if not QUIET:
+                    print(f"  {symbol}: [15M] trail_pct synced {stop.get('trail_pct')} -> {trail_pct}")
+                stop["trail_pct"] = trail_pct
+        else:
+            # ATR-based dynamic trail: each stop has its own trail_pct set at creation
+            # Do NOT sync from config — respect the per-asset ATR-computed trail
+            trail_pct = float(stop.get("trail_pct", 5.0))
+            full_close_threshold_for_stop = STRATEGY_PARAMS.get("full_close_after_tiers", 3)
+
         entry_price = float(stop["entry_price"])
         qty = float(stop["qty"])
 
@@ -697,6 +868,9 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
         if PROFIT_TAKING_ENABLED and not emergency_mode and has_alpaca_position(symbol):
             gain_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price else 0
             tiers_hit = stop.get("profit_tiers_hit", [])
+            # Snapshot original qty so each tier's % is computed from the
+            # position size at the START of this run, not after prior tier sells
+            original_qty_for_tiers = qty
 
             for tier in PROFIT_TIERS:
                 tier_gain = tier["gain_pct"]
@@ -707,7 +881,7 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                     continue
 
                 if gain_pct >= tier_gain:
-                    sell_qty = qty * tier_sell_pct / 100
+                    sell_qty = original_qty_for_tiers * tier_sell_pct / 100
 
                     # Round to int for equities, keep fractional for crypto
                     if not crypto:
@@ -720,6 +894,25 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                             print(f"  PROFIT TAKE SKIP: {symbol} +{gain_pct:.1f}% — sell_qty rounds to 0")
                         continue
 
+                    # Safety: never sell more than we actually hold
+                    if sell_qty > qty:
+                        print(f"  PROFIT TAKE CLAMP: {symbol} sell_qty {sell_qty} > held qty {qty}, clamping")
+                        sell_qty = qty
+
+                    # Safety: don't leave dust positions behind
+                    dust_threshold = 0.001 if crypto else 1
+                    remaining_after_sell = qty - sell_qty
+                    if 0 < remaining_after_sell < dust_threshold:
+                        print(f"  PROFIT TAKE SKIP: {symbol} — would leave dust position ({remaining_after_sell})")
+                        continue
+
+                    # Minimum quantity validation
+                    pt_asset_cls = "crypto" if crypto else "equity"
+                    pt_qty_ok, pt_min_qty = validate_min_qty(symbol, sell_qty, asset_class=pt_asset_cls)
+                    if not pt_qty_ok:
+                        print(f"  PROFIT TAKE SKIP: {symbol} sell_qty={sell_qty} below minimum ({pt_min_qty})")
+                        continue
+
                     order = execute_partial_sell(stop, sell_qty)
                     if order is None:
                         print(f"  ERROR: Profit-take sell failed for {symbol} — skipping tier {tier_gain}%")
@@ -727,7 +920,9 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
 
                     # Calculate PnL for this partial sell
                     sell_price = current_price  # Market order, approximate
-                    pnl = round((sell_price - entry_price) * sell_qty, 2)
+                    trade_value = sell_price * sell_qty
+                    slippage_cost = round(trade_value * get_slippage_pct(symbol), 2)
+                    pnl = round((sell_price - entry_price) * sell_qty - slippage_cost, 2)
 
                     # Log the profit-take trade
                     log_trade({
@@ -744,11 +939,15 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                         "entry_price": entry_price,
                         "pnl": pnl,
                         "pnl_pct": round(gain_pct, 2),
+                        "slippage_estimate": slippage_cost,
                         "signal_type": "profit_tier",
+                        "entry_signal_type": stop.get("entry_signal_type", "unknown"),
                         "tier_gain_pct": tier_gain,
                         "tier_sell_pct": tier_sell_pct,
                         "exit_reason": "profit_take",
                         "exit_type": f"tier_{tier['gain_pct']}pct",
+                        "exit_indicators": compute_exit_indicators(symbol, crypto=crypto),
+                        "timeframe": stop.get("timeframe", "1H"),
                     })
 
                     # Update stop qty and mark tier as hit
@@ -758,7 +957,81 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                     stop["profit_tiers_hit"] = tiers_hit
                     profit_takes_executed += 1
 
+                    # Crash-safety: persist tier immediately so a restart
+                    # won't re-trigger the same profit-take sell.  The stop
+                    # object is a reference inside active_stops, so the list
+                    # already reflects the mutation.
+                    _interim_state = {
+                        "schema_version": schema_version,
+                        "active_stops": active_stops,
+                        "closed_stops": closed_stops,
+                    }
+                    if not atomic_write_json(str(STATE_FILE), _interim_state):
+                        print(f"  WARNING: Intermediate state save failed after profit-take for {symbol}")
+
                     print(f"  PROFIT TAKE: {symbol} +{gain_pct:.1f}% — selling {tier_sell_pct}% ({sell_qty} units)")
+
+            # --- Full close after N tiers (learning mode: complete the round-trip) ---
+            full_close_threshold = full_close_threshold_for_stop
+            if full_close_threshold > 0 and len(tiers_hit) >= full_close_threshold and qty > 0:
+                remaining_qty = round(qty, 8) if crypto else int(qty)
+                # Minimum quantity validation
+                fc_asset_cls = "crypto" if crypto else "equity"
+                fc_qty_ok, fc_min_qty = validate_min_qty(symbol, remaining_qty, asset_class=fc_asset_cls)
+                if fc_qty_ok and remaining_qty > 0:
+                    fc_order = execute_sell(stop)
+                    if fc_order is not None:
+                        fc_sell_price = current_price
+                        fc_trade_value = fc_sell_price * remaining_qty
+                        fc_slippage_cost = round(fc_trade_value * get_slippage_pct(symbol), 2)
+                        fc_pnl = round((fc_sell_price - entry_price) * remaining_qty - fc_slippage_cost, 2)
+                        fc_pnl_pct = round(((fc_sell_price - entry_price) / entry_price) * 100, 2) if entry_price else 0
+
+                        log_trade({
+                            "timestamp": now_iso,
+                            "strategy": "TRAILING_STOP",
+                            "action": "FULL_CLOSE",
+                            "symbol": symbol,
+                            "asset_class": stop.get("asset_class", "equity" if not crypto else "crypto"),
+                            "qty": remaining_qty,
+                            "price": fc_sell_price,
+                            "order_type": "market",
+                            "order_id": str(fc_order.id),
+                            "status": "filled",
+                            "entry_price": entry_price,
+                            "pnl": fc_pnl,
+                            "pnl_pct": fc_pnl_pct,
+                            "slippage_estimate": fc_slippage_cost,
+                            "signal_type": "tier_threshold_complete",
+                            "entry_signal_type": stop.get("entry_signal_type", "unknown"),
+                            "tiers_hit": list(tiers_hit),
+                            "full_close_threshold": full_close_threshold,
+                            "exit_reason": "tier_threshold_complete",
+                            "exit_type": f"full_close_after_{full_close_threshold}_tiers",
+                            "exit_indicators": compute_exit_indicators(symbol, crypto=crypto),
+                            "timeframe": stop.get("timeframe", "1H"),
+                        })
+
+                        # Move to closed stops
+                        closed_record = deepcopy(stop)
+                        closed_record["status"] = "TIER_COMPLETE"
+                        closed_record["closed_at"] = now_iso
+                        closed_record["sell_price"] = fc_sell_price
+                        closed_record["sell_order_id"] = str(fc_order.id)
+                        closed_record["realized_pnl"] = fc_pnl
+                        closed_record["realized_pnl_pct"] = fc_pnl_pct
+                        closed_stops.append(closed_record)
+
+                        sells_executed += 1
+                        qty = 0
+                        stop["qty"] = 0
+                        print(f"  FULL CLOSE: {symbol} — all {full_close_threshold} tiers hit, "
+                              f"sold remaining {remaining_qty} | PnL=${fc_pnl:+.2f} ({fc_pnl_pct:+.2f}%)")
+                    else:
+                        print(f"  ERROR: Full close sell failed for {symbol} — keeping active")
+                else:
+                    if not QUIET:
+                        print(f"  FULL CLOSE SKIP: {symbol} remaining qty={remaining_qty} below minimum ({fc_min_qty})")
 
         # --- Ladder buys (equity only, skip crypto — crypto DCA handles this) ---
         # Skipped during emergency mode — no new entries
@@ -832,17 +1105,45 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                         stop["ladder_levels_hit"] = levels_hit
                         ladder_buys_executed += 1
 
-                        # Recalculate floor based on new entry price
+                        # Recalculate floor based on new weighted average entry price (not current_price)
+                        # NEVER lower the floor -- max() guard prevents ladder buys from removing protection
                         loss_pct = float(stop.get("loss_pct", 5.0))
-                        new_floor = round(current_price * (1 - loss_pct / 100), 6)
-                        if new_floor < floor_price:
-                            stop["floor_price"] = new_floor
+                        new_floor = round(new_entry * (1 - loss_pct / 100), 6)
+                        new_floor = max(new_floor, stop.get("floor_price", 0))
+                        stop["floor_price"] = new_floor
+                        floor_price = new_floor
+                        print(f"  LADDER BUY: {symbol} -{drop_pct:.1f}% — buying {level_shares} shares "
+                              f"(new avg=${new_entry:.2f}, floor=${new_floor:.4f})")
+
+        # --- Time-decay: tighten trail for positions that plateau ---
+        trail_decay = STRATEGY_PARAMS.get("trail_decay_per_day", 0)
+        if trail_decay > 0:
+            # Track when the position last made a new high
+            last_high_at = stop.get("last_new_high_at")
+            if current_price > highest_price:
+                stop["last_new_high_at"] = now_iso  # Updated new high
+            elif last_high_at:
+                try:
+                    high_dt = datetime.fromisoformat(last_high_at)
+                    if high_dt.tzinfo is None:
+                        high_dt = high_dt.replace(tzinfo=timezone.utc)
+                    days_stale = (datetime.now(timezone.utc) - high_dt).total_seconds() / 86400
+                    decay_amount = trail_decay * days_stale
+                    effective_trail = max(1.5, trail_pct - decay_amount)  # Never tighter than 1.5%
+                    if effective_trail < trail_pct:
+                        new_floor = highest_price * (1 - effective_trail / 100)
+                        if new_floor > floor_price:
+                            old_floor = floor_price
+                            stop["floor_price"] = round(new_floor, 6)
                             floor_price = new_floor
-                            print(f"  LADDER BUY: {symbol} -{drop_pct:.1f}% — buying {level_shares} shares "
-                                  f"(new avg=${new_entry:.2f}, floor=${new_floor:.4f})")
-                        else:
-                            print(f"  LADDER BUY: {symbol} -{drop_pct:.1f}% — buying {level_shares} shares "
-                                  f"(new avg=${new_entry:.2f}, floor unchanged=${floor_price:.4f})")
+                            if not QUIET:
+                                print(f"  {symbol}: TIME-DECAY floor raised ${old_floor:.4f} -> ${new_floor:.4f} "
+                                      f"(trail {trail_pct:.1f}% -> {effective_trail:.1f}%, stale {days_stale:.1f}d)")
+                except Exception:
+                    pass
+            else:
+                # First time: initialize the timestamp
+                stop["last_new_high_at"] = now_iso
 
         # --- Floor breach check ---
         if current_price <= floor_price:
@@ -850,7 +1151,7 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
 
             # --- Circuit breaker: limit simultaneous stop triggers ---
             stops_triggered_this_run += 1
-            if stops_triggered_this_run > MAX_STOPS_PER_RUN:
+            if stops_triggered_this_run >= MAX_STOPS_PER_RUN:
                 print(f"  CIRCUIT BREAKER: {stops_triggered_this_run} stops triggered in single run, pausing remaining")
                 log_trade({
                     "timestamp": now_iso,
@@ -880,6 +1181,14 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 still_active.append(stop)
                 break  # Stop processing remaining stops
 
+            # Minimum quantity validation
+            asset_cls = "crypto" if is_crypto(stop) else "equity"
+            qty_ok, min_qty = validate_min_qty(symbol, qty, asset_class=asset_cls)
+            if not qty_ok:
+                print(f"  SKIP SELL: {symbol} qty={qty} below minimum ({min_qty}) — keeping active")
+                still_active.append(stop)
+                continue
+
             order = execute_sell(stop)
             if order is None:
                 print(f"  ERROR: Sell failed for {symbol} — keeping stop active for retry")
@@ -888,7 +1197,9 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
 
             # Calculate realized PnL
             sell_price = current_price  # Market order, approximate
-            pnl = round((sell_price - entry_price) * qty, 2)
+            trade_value = sell_price * qty
+            slippage_cost = round(trade_value * get_slippage_pct(symbol), 2)
+            pnl = round((sell_price - entry_price) * qty - slippage_cost, 2)
             pnl_pct = round(((sell_price - entry_price) / entry_price) * 100, 2) if entry_price else 0
 
             # Log the sell
@@ -906,12 +1217,16 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 "entry_price": entry_price,
                 "pnl": pnl,
                 "pnl_pct": pnl_pct,
+                "slippage_estimate": slippage_cost,
                 "signal_type": "trailing_stop_triggered",
+                "entry_signal_type": stop.get("entry_signal_type", "unknown"),
                 "floor_price": floor_price,
                 "highest_price": float(stop["highest_price"]),
                 "trail_pct": trail_pct,
                 "exit_reason": "trailing_stop_triggered",
                 "exit_type": "floor_breach",
+                "exit_indicators": compute_exit_indicators(symbol, crypto=crypto),
+                "timeframe": stop.get("timeframe", "1H"),
             })
 
             # Move to closed
@@ -942,7 +1257,25 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 still_active.append(stop)
                 processed_symbols.add(stop["symbol"])
 
-    return still_active, closed_stops, sells_executed, profit_takes_executed, ladder_buys_executed
+    # --- Cleanup: move zero-qty zombie stops to closed ---
+    cleaned_active = []
+    for stop in still_active:
+        qty = float(stop.get("qty", 0))
+        crypto = is_crypto(stop)
+        dust_threshold = 0.001 if crypto else 1
+        if qty <= 0 or qty < dust_threshold:
+            symbol = stop.get("symbol", "???")
+            closed_record = deepcopy(stop)
+            closed_record["status"] = "CLEANED_ZERO_QTY"
+            closed_record["closed_at"] = now_iso
+            closed_record["realized_pnl"] = 0
+            closed_record["realized_pnl_pct"] = 0
+            closed_stops.append(closed_record)
+            print(f"  Cleaned up zero-qty stop for {symbol}")
+        else:
+            cleaned_active.append(stop)
+
+    return cleaned_active, closed_stops, sells_executed, profit_takes_executed, ladder_buys_executed
 
 
 # ---------------------------------------------------------------------------
@@ -956,6 +1289,9 @@ def main() -> int:
         print(f"Run at: {now.isoformat()}")
         print(f"Paper mode: {PAPER}")
         print("=" * 70)
+
+    if not acquire_pid_lock():
+        return 1
 
     # --- Load state ---
     state = atomic_read_json(str(STATE_FILE))
@@ -1030,10 +1366,34 @@ def main() -> int:
               f"({len(LADDER_LEVELS)} levels, equity only)")
         print(f"  Circuit breaker: max {MAX_STOPS_PER_RUN} stops per run")
     active_stops, closed_stops, sells, profit_takes, ladder_buys = process_active_stops(
-        active_stops, closed_stops, equity_market_open, emergency_mode=emergency_mode
+        active_stops, closed_stops, equity_market_open, emergency_mode=emergency_mode,
+        schema_version=state.get("schema_version", "1.0.0"),
     )
 
-    # --- Step 5: Save state atomically ---
+    # --- Step 5: Final zero-qty safety filter before state write ---
+    pre_filter_count = len(active_stops)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    filtered_active = []
+    for stop in active_stops:
+        qty = float(stop.get("qty", 0))
+        crypto = is_crypto(stop)
+        dust_threshold = 0.001 if crypto else 1
+        if qty <= 0 or qty < dust_threshold:
+            symbol = stop.get("symbol", "???")
+            closed_record = deepcopy(stop)
+            closed_record["status"] = "CLEANED_ZERO_QTY"
+            closed_record["closed_at"] = now_iso
+            closed_record["realized_pnl"] = 0
+            closed_record["realized_pnl_pct"] = 0
+            closed_stops.append(closed_record)
+            print(f"  Cleaned up zero-qty stop for {symbol}")
+        else:
+            filtered_active.append(stop)
+    active_stops = filtered_active
+    if len(active_stops) < pre_filter_count:
+        print(f"  Filtered {pre_filter_count - len(active_stops)} zero-qty zombie stop(s) before save")
+
+    # --- Step 6: Save state atomically ---
     updated_state = {
         "schema_version": state.get("schema_version", "1.0.0"),
         "active_stops": active_stops,

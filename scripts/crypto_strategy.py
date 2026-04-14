@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests as _http  # For Binance funding rate API (free, no auth)
 
 from alpaca.data.historical import CryptoHistoricalDataClient
 from alpaca.data.requests import CryptoBarsRequest
@@ -38,7 +39,8 @@ TRAILING_STOPS_FILE = STATE_DIR / "trailing_stops.json"
 
 # ---------- add scripts to path for atomic_write ----------
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-from atomic_write import atomic_write_json, atomic_read_json
+from atomic_write import atomic_write_json, atomic_read_json, locked_read_modify_write, file_lock
+from resilience import acquire_pid_lock, configure_client_timeouts, validate_spread, validate_min_qty
 
 # ---------- Quiet mode: suppress verbose output when nothing actionable happens ----------
 QUIET = "--quiet" in sys.argv
@@ -87,37 +89,68 @@ STOP_ATR_MULTIPLIER = 2.0
 CASH_RESERVE_PCT = 0.20
 ACCOUNT_VALUE_APPROX = 98952  # from current state
 
+# VWAP filter (video strategy: institutional trend benchmark)
+VWAP_PERIOD = 24               # Rolling VWAP window (24 bars = 24h on 1H timeframe)
+VWAP_SLOPE_PERIOD = 5          # Bars to measure VWAP slope
+VWAP_SLOPE_CHOP_THRESHOLD = 0.05  # Slope < this % = choppy market, skip trades
 
-def load_params():
-    """Load strategy parameters from config file (self-improvement can modify these)."""
-    config_file = CONFIG_DIR / "strategy_params.json"
-    config = atomic_read_json(str(config_file))
+# ADR exhaustion filter (video strategy: don't chase extended moves)
+ADR_LOOKBACK_DAYS = 10
+ADR_EXHAUSTION_PCT = 85        # Today's range > 85% of ADR = exhausted
 
-    if config and "crypto_strategy" in config:
-        cs = config["crypto_strategy"]
-        return {
-            "watchlist": cs.get("watchlist", ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"]),
-            "position_size_usd": cs.get("position_size_usd", 2500),
-            "position_size_bounds": cs.get("position_size_bounds", [1000, 5000]),
-            "bb_period": cs.get("bb_period", 20),
-            "bb_std": cs.get("bb_std", 2.0),
-            "rsi_period": cs.get("rsi_period", 14),
-            "rsi_oversold": cs.get("rsi_oversold", 35),
-            "rsi_overbought": cs.get("rsi_overbought", 70),
-            "ema_fast": cs.get("ema_fast", 9),
-            "ema_med": cs.get("ema_med", 21),
-            "ema_long": cs.get("ema_long", 55),
-            "atr_period": cs.get("atr_period", 14),
-            "dca_rsi_threshold": cs.get("dca_rsi_threshold", 42),
-            "dca_aggressive_rsi": cs.get("dca_aggressive_rsi", 20),
-            "stop_atr_multiplier": cs.get("stop_atr_multiplier", 2.0),
-            "trail_pct": config.get("trailing_stop", {}).get("trail_pct", 5.0),
-            "loss_pct": config.get("trailing_stop", {}).get("loss_pct", 5.0),
-        }
+# EMA dynamic trailing stop (video strategy: ride winners with EMA floor)
+EMA_TRAIL_BUFFER_PCT = 0.5     # Buffer below EMA9 for trailing floor
 
-    # Fallback to defaults if config unreadable
-    print("  WARNING: Could not load strategy_params.json, using defaults")
+# Body momentum (video strategy: bullish vs bearish candle body pressure)
+BODY_MOMENTUM_PERIOD = 5
+
+# Volume-confirmed engulfing (video strategy: institutional reversal pattern)
+ENGULF_VOL_MULTIPLIER = 1.5    # Volume must be 1.5x of 5-bar average
+
+# Feature enable flags (can be toggled in config)
+VWAP_FILTER_ENABLED = True
+ADR_FILTER_ENABLED = True
+EMA_TRAIL_ENABLED = True
+BODY_MOMENTUM_ENABLED = True
+ENGULF_ENABLED = True
+
+
+# ---------------------------------------------------------------------------
+# Adaptive slippage model (Phase 6)
+# ---------------------------------------------------------------------------
+
+def update_slippage_model(symbol, fill_price, quote_midpoint):
+    """Update the EMA slippage model for a symbol."""
+    if not quote_midpoint or quote_midpoint <= 0 or fill_price <= 0:
+        return
+
+    actual_slippage = abs(fill_price - quote_midpoint) / quote_midpoint * 100
+
+    model_file = STATE_DIR / "slippage_model.json"
+    model = atomic_read_json(str(model_file))
+    if not model:
+        model = {"schema_version": "1.0.0", "assets": {}, "default_slippage_pct": 0.10}
+
+    asset = model.setdefault("assets", {}).setdefault(symbol, {
+        "ema_slippage_pct": 0.10, "samples": 0, "last_updated": None
+    })
+
+    alpha = 0.1  # Slow EMA for robustness
+    old_ema = asset.get("ema_slippage_pct", 0.10)
+    new_ema = alpha * actual_slippage + (1 - alpha) * old_ema
+
+    asset["ema_slippage_pct"] = round(new_ema, 4)
+    asset["samples"] = asset.get("samples", 0) + 1
+    asset["last_updated"] = datetime.now(timezone.utc).isoformat()
+    model["last_updated"] = asset["last_updated"]
+
+    atomic_write_json(str(model_file), model)
+
+
+def _default_params():
+    """Hardcoded fallback defaults (v1 schema)."""
     return {
+        "schema_version": "1.0.0",
         "watchlist": ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"],
         "position_size_usd": 2500,
         "position_size_bounds": [1000, 5000],
@@ -127,8 +160,178 @@ def load_params():
         "atr_period": 14,
         "dca_rsi_threshold": 42, "dca_aggressive_rsi": 20,
         "stop_atr_multiplier": 2.0,
+        "adx_period": 14, "adx_ranging_threshold": 25, "adx_trending_threshold": 20,
         "trail_pct": 5.0, "loss_pct": 5.0,
+        "vwap_filter_enabled": True, "vwap_period": 24,
+        "vwap_slope_period": 5, "vwap_slope_chop_threshold": 0.05,
+        "adr_filter_enabled": True, "adr_lookback_days": 10, "adr_exhaustion_pct": 85,
+        "ema_trail_enabled": True, "ema_trail_buffer_pct": 0.5,
+        "body_momentum_enabled": True, "body_momentum_period": 5,
+        "engulf_enabled": True, "engulf_vol_multiplier": 1.5,
+        "cash_reserve_pct": 0.20,
     }
+
+
+def _load_v1_params(cs, config):
+    """Load v1 flat-format crypto_strategy config."""
+    return {
+        "schema_version": "1.0.0",
+        "watchlist": cs.get("watchlist", ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"]),
+        "position_size_usd": cs.get("position_size_usd", 2500),
+        "position_size_bounds": cs.get("position_size_bounds", [1000, 5000]),
+        "bb_period": cs.get("bb_period", 20),
+        "bb_std": cs.get("bb_std", 2.0),
+        "rsi_period": cs.get("rsi_period", 14),
+        "rsi_oversold": cs.get("rsi_oversold", 35),
+        "rsi_overbought": cs.get("rsi_overbought", 70),
+        "ema_fast": cs.get("ema_fast", 9),
+        "ema_med": cs.get("ema_med", 21),
+        "ema_long": cs.get("ema_long", 55),
+        "atr_period": cs.get("atr_period", 14),
+        "dca_rsi_threshold": cs.get("dca_rsi_threshold", 42),
+        "dca_aggressive_rsi": cs.get("dca_aggressive_rsi", 20),
+        "stop_atr_multiplier": cs.get("stop_atr_multiplier", 2.0),
+        "adx_period": cs.get("adx_period", 14),
+        "adx_ranging_threshold": cs.get("adx_ranging_threshold", 25),
+        "adx_trending_threshold": cs.get("adx_trending_threshold", 20),
+        "trail_pct": config.get("trailing_stop", {}).get("trail_pct", 5.0),
+        "loss_pct": config.get("trailing_stop", {}).get("loss_pct", 5.0),
+        "vwap_filter_enabled": cs.get("vwap_filter_enabled", True),
+        "vwap_period": cs.get("vwap_period", 24),
+        "vwap_slope_period": cs.get("vwap_slope_period", 5),
+        "vwap_slope_chop_threshold": cs.get("vwap_slope_chop_threshold", 0.05),
+        "adr_filter_enabled": cs.get("adr_filter_enabled", True),
+        "adr_lookback_days": cs.get("adr_lookback_days", 10),
+        "adr_exhaustion_pct": cs.get("adr_exhaustion_pct", 85),
+        "ema_trail_enabled": cs.get("ema_trail_enabled", True),
+        "ema_trail_buffer_pct": cs.get("ema_trail_buffer_pct", 0.5),
+        "body_momentum_enabled": cs.get("body_momentum_enabled", True),
+        "body_momentum_period": cs.get("body_momentum_period", 5),
+        "engulf_enabled": cs.get("engulf_enabled", True),
+        "engulf_vol_multiplier": cs.get("engulf_vol_multiplier", 1.5),
+        "cash_reserve_pct": cs.get("cash_reserve_pct", 0.20),
+    }
+
+
+def _load_v2_params(cs, config):
+    """Load v2 nested-format crypto_strategy config.
+
+    Returns a dict that:
+    - stores 'shared' and 'signal' sub-dicts for structured access
+    - ALSO merges all shared + first-seen signal values as flat top-level keys
+      so existing callers (params.get("rsi_oversold", 35)) keep working
+    """
+    shared = cs.get("shared", {})
+    signal = cs.get("signal", {})
+
+    # Start with flat backward-compat keys from shared
+    flat = dict(shared)
+
+    # Overlay signal-specific values so flat keys pick up per-signal values
+    # (first signal that defines each key wins -- gives backward compat)
+    for sig_name, sig_vals in signal.items():
+        for k, v in sig_vals.items():
+            if k not in flat and k != "enabled" and not k.endswith("_bounds"):
+                flat[k] = v
+
+    # Build the result dict
+    result = {
+        "schema_version": "2.0.0",
+        "watchlist": cs.get("watchlist", ["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD", "AVAX/USD", "LINK/USD"]),
+        "position_size_usd": cs.get("position_size_usd", 4000),
+        "position_size_bounds": cs.get("position_size_bounds", [1000, 5000]),
+        # Structured sub-dicts for v2-aware code
+        "shared": shared,
+        "signal": signal,
+        # Trailing stop params from their own section
+        "trail_pct": config.get("trailing_stop", {}).get("trail_pct", 5.0),
+        "loss_pct": config.get("trailing_stop", {}).get("loss_pct", 5.0),
+    }
+
+    # Merge all flat keys for backward compatibility
+    # (result keys take precedence over flat to preserve watchlist, position_size, etc.)
+    for k, v in flat.items():
+        if k not in result:
+            result[k] = v
+
+    # Ensure key feature flags and params always exist at top level
+    # (some callers check these directly)
+    result.setdefault("bb_period", shared.get("bb_period", 20))
+    result.setdefault("bb_std", shared.get("bb_std", 2.0))
+    result.setdefault("rsi_period", shared.get("rsi_period", 14))
+    result.setdefault("rsi_oversold", 35)
+    result.setdefault("rsi_overbought", 70)
+    result.setdefault("ema_fast", shared.get("ema_fast", 9))
+    result.setdefault("ema_med", shared.get("ema_med", 21))
+    result.setdefault("ema_long", shared.get("ema_long", 55))
+    result.setdefault("atr_period", shared.get("atr_period", 14))
+    result.setdefault("adx_period", shared.get("adx_period", 14))
+    result.setdefault("adx_ranging_threshold", shared.get("adx_ranging_threshold", 25))
+    result.setdefault("adx_trending_threshold", shared.get("adx_trending_threshold", 20))
+    result.setdefault("dca_rsi_threshold", 42)
+    result.setdefault("dca_aggressive_rsi", shared.get("dca_aggressive_rsi", 20))
+    result.setdefault("stop_atr_multiplier", shared.get("stop_atr_multiplier", 2.0))
+    result.setdefault("vwap_filter_enabled", shared.get("vwap_filter_enabled", True))
+    result.setdefault("vwap_period", shared.get("vwap_period", 24))
+    result.setdefault("vwap_slope_period", shared.get("vwap_slope_period", 5))
+    result.setdefault("vwap_slope_chop_threshold", 0.05)
+    result.setdefault("adr_filter_enabled", shared.get("adr_filter_enabled", True))
+    result.setdefault("adr_lookback_days", shared.get("adr_lookback_days", 10))
+    result.setdefault("adr_exhaustion_pct", shared.get("adr_exhaustion_pct", 85))
+    result.setdefault("ema_trail_enabled", shared.get("ema_trail_enabled", True))
+    result.setdefault("ema_trail_buffer_pct", shared.get("ema_trail_buffer_pct", 0.5))
+    result.setdefault("body_momentum_enabled", True)
+    result.setdefault("body_momentum_period", shared.get("body_momentum_period", 5))
+    result.setdefault("engulf_enabled", True)
+    result.setdefault("engulf_vol_multiplier", 1.5)
+    result.setdefault("cash_reserve_pct", shared.get("cash_reserve_pct", 0.20))
+
+    return result
+
+
+def load_params():
+    """Load strategy parameters from config file (self-improvement can modify these).
+    Supports both v1 (flat) and v2 (nested shared/signal) config schemas."""
+    config_file = CONFIG_DIR / "strategy_params.json"
+    config = atomic_read_json(str(config_file))
+    if not config or "crypto_strategy" not in config:
+        print("  WARNING: Could not load strategy_params.json, using defaults")
+        return _default_params()
+    cs = config["crypto_strategy"]
+    # Detect v2: has both 'signal' and 'shared' keys
+    if "signal" in cs and "shared" in cs:
+        return _load_v2_params(cs, config)
+    return _load_v1_params(cs, config)
+
+
+def load_params_15m():
+    """Load 15-minute strategy parameters from crypto_strategy_15m config section."""
+    config_file = CONFIG_DIR / "strategy_params.json"
+    config = atomic_read_json(str(config_file))
+    if not config or "crypto_strategy_15m" not in config:
+        return None  # 15-min strategy not configured
+
+    cs = config["crypto_strategy_15m"]
+    if not cs.get("enabled", False):
+        return None
+
+    # Reuse the same v2 loading logic
+    if "signal" in cs and "shared" in cs:
+        return _load_v2_params(cs, config)
+    return _load_v1_params(cs, config)
+
+
+def _get_signal_params(params, signal_type):
+    """Get merged params for a signal: shared + signal-specific overrides.
+    In v2, each signal gets its own tunable params layered on top of shared.
+    In v1, everything is flat so just return params as-is."""
+    if params.get("schema_version") == "2.0.0":
+        shared = params.get("shared", {})
+        sig = params.get("signal", {}).get(signal_type, {})
+        merged = dict(shared)
+        merged.update(sig)
+        return merged
+    return params  # v1: everything flat
 
 
 # ============================================================
@@ -255,35 +458,110 @@ def calc_adx(high, low, close, period=14):
     return adx
 
 
-def compute_indicators(df):
-    """Compute all technical indicators on an OHLCV DataFrame."""
+def calc_vwap(high, low, close, volume, period=24):
+    """Rolling Volume Weighted Average Price -- institutional benchmark.
+    For 1H crypto bars, period=24 gives a rolling 24-hour VWAP."""
+    typical_price = (high + low + close) / 3
+    tp_vol = typical_price * volume
+    vol_sum = volume.rolling(window=period).sum()
+    vwap = tp_vol.rolling(window=period).sum() / vol_sum.replace(0, np.nan)
+    return vwap
+
+
+_BINANCE_SYMBOL_MAP = {
+    "SHIB": "1000SHIBUSDT",  # Binance uses 1000SHIB for perpetuals
+}
+
+
+def fetch_funding_rates(symbols, timeout=5):
+    """Fetch latest funding rates from Binance Futures API (free, no auth).
+    Returns dict mapping symbol -> float funding rate, or None for failures."""
+    rates = {}
+    for symbol in symbols:
+        base = symbol.split("/")[0]
+        binance_sym = _BINANCE_SYMBOL_MAP.get(base, f"{base}USDT")
+        try:
+            resp = _http.get(
+                "https://fapi.binance.com/fapi/v1/fundingRate",
+                params={"symbol": binance_sym, "limit": 1},
+                timeout=timeout,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    rates[symbol] = float(data[0]["fundingRate"])
+                    continue
+        except Exception:
+            pass
+        rates[symbol] = None
+    return rates
+
+
+def compute_indicators(df, params):
+    """Compute all technical indicators on an OHLCV DataFrame.
+    Uses shared params in v2, flat params in v1."""
+    # v2: read from shared sub-dict; v1: read flat params directly
+    ip = params.get("shared", params)
+
     close = df["close"]
     high = df["high"]
     low = df["low"]
 
+    # Sanitize: clip negative volume from data anomalies
+    df["volume"] = df["volume"].clip(lower=0)
+
     # Bollinger Bands
-    bb_mid, bb_upper, bb_lower = calc_bollinger_bands(close, BB_PERIOD, BB_STD)
+    bb_mid, bb_upper, bb_lower = calc_bollinger_bands(close, ip.get("bb_period", 20), ip.get("bb_std", 2.0))
     df["bb_mid"] = bb_mid
     df["bb_upper"] = bb_upper
     df["bb_lower"] = bb_lower
 
     # RSI
-    df["rsi"] = calc_rsi(close, RSI_PERIOD)
+    df["rsi"] = calc_rsi(close, ip.get("rsi_period", 14))
 
     # EMAs
-    df["ema9"] = calc_ema(close, EMA_FAST)
-    df["ema21"] = calc_ema(close, EMA_MED)
-    df["ema55"] = calc_ema(close, EMA_LONG)
+    df["ema9"] = calc_ema(close, ip.get("ema_fast", 9))
+    df["ema21"] = calc_ema(close, ip.get("ema_med", 21))
+    df["ema55"] = calc_ema(close, ip.get("ema_long", 55))
 
     # ATR
-    df["atr"] = calc_atr(high, low, close, ATR_PERIOD)
+    df["atr"] = calc_atr(high, low, close, ip.get("atr_period", 14))
 
     # ADX — trend strength filter (YouTube research: MUST have this for mean reversion)
-    df["adx"] = calc_adx(high, low, close, ADX_PERIOD)
+    df["adx"] = calc_adx(high, low, close, ip.get("adx_period", 14))
 
     # BB position (0 = lower band, 1 = upper band)
     bb_range = bb_upper - bb_lower
     df["bb_position"] = (close - bb_lower) / bb_range.replace(0, np.nan)
+
+    # VWAP -- rolling institutional benchmark
+    df["vwap"] = calc_vwap(high, low, close, df["volume"], ip.get("vwap_period", 24))
+
+    # VWAP slope -- % change over N bars, flat = choppy market
+    df["vwap_slope"] = df["vwap"].pct_change(periods=ip.get("vwap_slope_period", 5)) * 100
+
+    # Volume average (5-bar) for engulfing confirmation
+    df["vol_avg_5"] = df["volume"].rolling(window=5).mean()
+
+    # Body momentum -- rolling bullish vs bearish candle body sums
+    body = close - df["open"]
+    df["bull_body_sum"] = body.where(body > 0, 0).rolling(window=ip.get("body_momentum_period", 5)).sum()
+    df["bear_body_sum"] = (-body).where(body < 0, 0).rolling(window=ip.get("body_momentum_period", 5)).sum()
+
+    # Derived features for ML meta-scorer
+    df["rsi_roc"] = df["rsi"].diff()
+    bb_range_safe = (df["bb_upper"] - df["bb_lower"]).replace(0, np.nan)
+    df["bb_width_pct"] = bb_range_safe / close * 100
+    df["volume_ratio"] = df["volume"] / df["vol_avg_5"].replace(0, np.nan)
+    df["ema_alignment"] = (df["ema9"] - df["ema55"]) / close.replace(0, np.nan) * 100
+    vwap_safe = df["vwap"].replace(0, np.nan)
+    df["vwap_deviation"] = (close - vwap_safe) / close.replace(0, np.nan) * 100
+    df["atr_pct"] = df["atr"] / close.replace(0, np.nan) * 100
+
+    # MACD -- momentum oscillator (standard 12/26/9, research top feature)
+    df["macd"] = calc_ema(close, 12) - calc_ema(close, 26)
+    df["macd_signal"] = calc_ema(df["macd"], 9)
+    df["macd_histogram"] = df["macd"] - df["macd_signal"]
 
     return df
 
@@ -292,13 +570,18 @@ def compute_indicators(df):
 # SIGNAL GENERATION
 # ============================================================
 
-def generate_signals(df, symbol):
+def generate_signals(df, symbol, params, dry_run=False, existing_positions=None):
     """
     Generate trading signals for a single crypto asset.
+    Each signal block reads its OWN per-signal params via _get_signal_params().
+
+    Args:
+        dry_run: When True, skip all log_blocked_signal calls (for backtesting).
+        existing_positions: When provided, use for stale position check instead of reading file.
     Returns a list of signal dicts.
     """
     signals = []
-    if df.empty or len(df) < EMA_LONG + 5:
+    if df.empty or len(df) < params.get("ema_long", 55) + 5:
         if not QUIET:
             print(f"  [{symbol}] Not enough data ({len(df)} bars), skipping")
         return signals
@@ -319,6 +602,13 @@ def generate_signals(df, symbol):
 
     adx = latest["adx"]
 
+    # New indicator values (video strategy features)
+    vwap_val = latest.get("vwap", np.nan)
+    vwap_slope_val = latest.get("vwap_slope", np.nan)
+    vol_avg_5 = latest.get("vol_avg_5", np.nan)
+    bull_body_sum = latest.get("bull_body_sum", np.nan)
+    bear_body_sum = latest.get("bear_body_sum", np.nan)
+
     indicators = {
         "price": round(float(price), 4),
         "rsi": round(float(rsi), 2),
@@ -331,91 +621,233 @@ def generate_signals(df, symbol):
         "ema21": round(float(ema21), 4),
         "ema55": round(float(ema55), 4),
         "atr": round(float(atr), 4),
+        "vwap": round(float(vwap_val), 4) if not np.isnan(vwap_val) else None,
+        "vwap_slope": round(float(vwap_slope_val), 4) if not np.isnan(vwap_slope_val) else None,
+        # Derived features for ML scorer
+        "rsi_roc": round(float(latest.get("rsi_roc", np.nan)), 4) if not np.isnan(latest.get("rsi_roc", np.nan)) else None,
+        "bb_width_pct": round(float(latest.get("bb_width_pct", np.nan)), 4) if not np.isnan(latest.get("bb_width_pct", np.nan)) else None,
+        "volume_ratio": round(float(latest.get("volume_ratio", np.nan)), 4) if not np.isnan(latest.get("volume_ratio", np.nan)) else None,
+        "ema_alignment": round(float(latest.get("ema_alignment", np.nan)), 4) if not np.isnan(latest.get("ema_alignment", np.nan)) else None,
+        "vwap_deviation": round(float(latest.get("vwap_deviation", np.nan)), 4) if not np.isnan(latest.get("vwap_deviation", np.nan)) else None,
+        "atr_pct": round(float(latest.get("atr_pct", np.nan)), 4) if not np.isnan(latest.get("atr_pct", np.nan)) else None,
+        # MACD
+        "macd": round(float(latest.get("macd", np.nan)), 4) if not np.isnan(latest.get("macd", np.nan)) else None,
+        "macd_signal": round(float(latest.get("macd_signal", np.nan)), 4) if not np.isnan(latest.get("macd_signal", np.nan)) else None,
+        "macd_histogram": round(float(latest.get("macd_histogram", np.nan)), 4) if not np.isnan(latest.get("macd_histogram", np.nan)) else None,
     }
 
-    is_ranging = adx < ADX_RANGING_THRESHOLD if not np.isnan(adx) else True
-    is_trending = adx > ADX_TRENDING_THRESHOLD if not np.isnan(adx) else False
+    is_ranging = adx < params.get("adx_ranging_threshold", 25) if not np.isnan(adx) else True
+    is_trending = adx > params.get("adx_trending_threshold", 20) if not np.isnan(adx) else False
+
+    # VWAP trend filter -- institutional benchmark from video analysis
+    # When VWAP filter is disabled, always pass the gate
+    vwap_filter_on = params.get("vwap_filter_enabled", params.get("shared", {}).get("vwap_filter_enabled", True))
+    above_vwap = (price >= vwap_val if not np.isnan(vwap_val) else True) if vwap_filter_on else True
+
+    # Choppy market detection: each signal can have its own threshold (Feature H fix)
+    # Default choppy from shared params, signals can override via _get_signal_params
+    def _is_choppy(signal_params):
+        """Check if market is choppy using signal-specific or shared threshold."""
+        if not vwap_filter_on:
+            return False
+        thresh = signal_params.get("vwap_slope_chop_threshold",
+                                   params.get("shared", params).get("vwap_slope_chop_threshold", 0.05))
+        return (abs(vwap_slope_val) < thresh if not np.isnan(vwap_slope_val) else False)
+
+    # Default shared-level choppy (for backward compat / signals without own threshold)
+    is_choppy = _is_choppy(params.get("shared", params))
+    if is_choppy and not QUIET:
+        print(f"  [{symbol}] VWAP slope flat ({vwap_slope_val:.4f}%), choppy market detected")
 
     # --- Signal 1: Mean Reversion BUY ---
-    # Price below lower BB AND RSI < 35, GATED by ADX < 25 (ranging market)
-    # YouTube research: BB+RSI mean reversion LOSES money in trending crypto markets
-    if price < bb_lower and rsi < RSI_OVERSOLD:
-        if is_ranging:
-            signals.append({
-                "symbol": symbol,
-                "strategy": "CRYPTO_MEAN_REVERSION",
-                "action": "BUY",
-                "signal_type": "mean_reversion_oversold",
-                "strength": "STRONG",
-                "reason": f"Price ({price:.2f}) < lower BB ({bb_lower:.2f}), RSI={rsi:.1f}, ADX={adx:.1f} (ranging)",
-                "indicators": indicators,
-                "stop_distance": round(float(atr * STOP_ATR_MULTIPLIER), 4),
-            })
-        else:
-            if not QUIET:
-                print(f"  [{symbol}] Mean reversion BLOCKED by ADX={adx:.1f} (trending market, would lose money)")
+    # Price below lower BB AND RSI oversold, GATED by ADX (ranging market)
+    mr_p = _get_signal_params(params, "mean_reversion_oversold")
+    if mr_p.get("enabled", True):
+        rsi_oversold = mr_p.get("rsi_oversold", 35)
+        if price < bb_lower and rsi < rsi_oversold:
+            mr_choppy = _is_choppy(mr_p)  # Per-signal threshold (Feature H)
+            if mr_choppy:
+                if not QUIET:
+                    print(f"  [{symbol}] Mean reversion BLOCKED -- VWAP slope flat (choppy market)")
+                if not dry_run:
+                    mr_thresh = mr_p.get("vwap_slope_chop_threshold",
+                                         params.get("shared", params).get("vwap_slope_chop_threshold", 0.05))
+                    log_blocked_signal(symbol, "CRYPTO_MEAN_REVERSION", "mean_reversion_oversold",
+                                   "vwap_slope_chop", f"VWAP slope {vwap_slope_val:.4f}% < {mr_thresh}%", indicators)
+            elif is_ranging:
+                signals.append({
+                    "symbol": symbol,
+                    "strategy": "CRYPTO_MEAN_REVERSION",
+                    "action": "BUY",
+                    "signal_type": "mean_reversion_oversold",
+                    "strength": "STRONG",
+                    "reason": f"Price ({price:.2f}) < lower BB ({bb_lower:.2f}), RSI={rsi:.1f}, ADX={adx:.1f} (ranging)",
+                    "indicators": indicators,
+                    "stop_distance": round(float(atr * mr_p.get("stop_atr_multiplier", 2.0)), 4),
+                })
+            else:
+                if not QUIET:
+                    print(f"  [{symbol}] Mean reversion BLOCKED by ADX={adx:.1f} (trending market, would lose money)")
 
     # --- Signal 2: EMA Crossover BUY ---
     # 9 EMA > 21 EMA, both above 55 EMA, RSI > 50
-    if ema9 > ema21 and ema21 > ema55 and rsi > 50:
-        # Check for recent crossover (within last 3 bars)
-        cross_recent = False
-        for i in range(-3, 0):
-            if len(df) > abs(i):
-                row = df.iloc[i]
-                prev_row = df.iloc[i-1] if len(df) > abs(i-1) else None
-                if prev_row is not None:
-                    if row["ema9"] > row["ema21"] and prev_row["ema9"] <= prev_row["ema21"]:
-                        cross_recent = True
-                        break
+    # VWAP gate: trend buys only above VWAP (institutional buyers in control)
+    ema_p = _get_signal_params(params, "ema_crossover_bullish")
+    if ema_p.get("enabled", True):
+        ec_choppy = _is_choppy(ema_p)  # Uses signal-specific threshold
+        if ema9 > ema21 and ema21 > ema55 and rsi > 50 and above_vwap and not ec_choppy:
+            # Check for recent crossover (within last 3 bars)
+            cross_recent = False
+            for i in range(-3, 0):
+                if len(df) > abs(i):
+                    row = df.iloc[i]
+                    prev_row = df.iloc[i-1] if len(df) > abs(i-1) else None
+                    if prev_row is not None:
+                        if row["ema9"] > row["ema21"] and prev_row["ema9"] <= prev_row["ema21"]:
+                            cross_recent = True
+                            break
 
-        # ADX confirms trend = stronger signal
-        adx_confirms = is_trending
-        strength = "STRONG" if (cross_recent or adx_confirms) else "MODERATE"
-        signals.append({
-            "symbol": symbol,
-            "strategy": "CRYPTO_TREND",
-            "action": "BUY",
-            "signal_type": "ema_crossover_bullish",
-            "strength": strength,
-            "reason": f"EMA9({ema9:.2f}) > EMA21({ema21:.2f}) > EMA55({ema55:.2f}), RSI={rsi:.1f}, ADX={adx:.1f}",
-            "indicators": indicators,
-            "recent_crossover": cross_recent,
-            "adx_confirms_trend": adx_confirms,
-        })
+            # ADX confirms trend = stronger signal
+            adx_confirms = is_trending
+            strength = "STRONG" if (cross_recent or adx_confirms) else "MODERATE"
+            signals.append({
+                "symbol": symbol,
+                "strategy": "CRYPTO_TREND",
+                "action": "BUY",
+                "signal_type": "ema_crossover_bullish",
+                "strength": strength,
+                "reason": f"EMA9({ema9:.2f}) > EMA21({ema21:.2f}) > EMA55({ema55:.2f}), RSI={rsi:.1f}, ADX={adx:.1f}",
+                "indicators": indicators,
+                "recent_crossover": cross_recent,
+                "adx_confirms_trend": adx_confirms,
+            })
+        elif ema9 > ema21 and ema21 > ema55 and rsi > 50:
+            # EMA crossover conditions met but blocked by VWAP filter
+            filter_name = "vwap_trend" if not above_vwap else "vwap_slope_chop"
+            reason = "below VWAP" if not above_vwap else "choppy market (VWAP slope flat)"
+            if not QUIET:
+                print(f"  [{symbol}] EMA crossover BLOCKED -- {reason}")
+            if not dry_run:
+                log_blocked_signal(symbol, "CRYPTO_TREND", "ema_crossover_bullish", filter_name, reason, indicators)
 
     # --- Signal 3: DCA Trigger BUY ---
-    # RSI < 40 AND price in lower half of BB range
-    if rsi < DCA_RSI_THRESHOLD and bb_pos is not None and not np.isnan(bb_pos) and bb_pos < 0.5:
-        aggressive = rsi < DCA_AGGRESSIVE_RSI
-        signals.append({
-            "symbol": symbol,
-            "strategy": "CRYPTO_DCA",
-            "action": "BUY",
-            "signal_type": "dca_technical_trigger",
-            "strength": "STRONG" if aggressive else "MODERATE",
-            "reason": f"RSI={rsi:.1f} < {DCA_RSI_THRESHOLD}, BB position={bb_pos:.2f} (lower half)",
-            "indicators": indicators,
-            "aggressive": aggressive,
-        })
+    # RSI < threshold AND price in lower half of BB range (skip in choppy markets)
+    dca_p = _get_signal_params(params, "dca_technical_trigger")
+    if dca_p.get("enabled", True):
+        dca_rsi_thresh = dca_p.get("dca_rsi_threshold", 42)
+        dca_aggressive_rsi = dca_p.get("dca_aggressive_rsi", 20)
+        if rsi < dca_rsi_thresh and bb_pos is not None and not np.isnan(bb_pos) and bb_pos < 0.5 and not is_choppy:
+            aggressive = rsi < dca_aggressive_rsi
+            signals.append({
+                "symbol": symbol,
+                "strategy": "CRYPTO_DCA",
+                "action": "BUY",
+                "signal_type": "dca_technical_trigger",
+                "strength": "STRONG" if aggressive else "MODERATE",
+                "reason": f"RSI={rsi:.1f} < {dca_rsi_thresh}, BB position={bb_pos:.2f} (lower half)",
+                "indicators": indicators,
+                "aggressive": aggressive,
+            })
 
     # --- Signal 4: SELL signals for existing positions ---
-    # RSI > 70 or price above upper BB
-    if rsi > RSI_OVERBOUGHT or price > bb_upper:
-        sell_reason = []
-        if rsi > RSI_OVERBOUGHT:
-            sell_reason.append(f"RSI={rsi:.1f} > {RSI_OVERBOUGHT}")
-        if price > bb_upper:
-            sell_reason.append(f"Price ({price:.2f}) above upper BB ({bb_upper:.2f})")
-        signals.append({
-            "symbol": symbol,
-            "strategy": "CRYPTO_MEAN_REVERSION",
-            "action": "SELL",
-            "signal_type": "overbought_exit",
-            "strength": "STRONG" if (rsi > 75 and price > bb_upper) else "MODERATE",
-            "reason": "; ".join(sell_reason),
-            "indicators": indicators,
-        })
+    # RSI overbought or price above upper BB
+    ob_p = _get_signal_params(params, "overbought_exit")
+    if ob_p.get("enabled", True):
+        rsi_ob = ob_p.get("rsi_overbought", 70)
+        if rsi > rsi_ob or price > bb_upper:
+            sell_reason = []
+            if rsi > rsi_ob:
+                sell_reason.append(f"RSI={rsi:.1f} > {rsi_ob}")
+            if price > bb_upper:
+                sell_reason.append(f"Price ({price:.2f}) above upper BB ({bb_upper:.2f})")
+            signals.append({
+                "symbol": symbol,
+                "strategy": "CRYPTO_MEAN_REVERSION",
+                "action": "SELL",
+                "signal_type": "overbought_exit",
+                "strength": "STRONG" if (rsi > 75 and price > bb_upper) else "MODERATE",
+                "reason": "; ".join(sell_reason),
+                "indicators": indicators,
+            })
+
+    # --- Signal 4B: Time-based stale position exit ---
+    # Positions open > 7 days with < 2% gain should be trimmed to free capital
+    # In dry_run (backtest) mode, skip file reads entirely
+    stale_days = params.get("shared", params).get("stale_position_days", 7)
+    stale_min_gain = params.get("shared", params).get("stale_min_gain_pct", 2.0)
+    if dry_run:
+        stops_data = existing_positions  # None in backtest unless simulator provides
+    else:
+        stops_data = existing_positions if existing_positions is not None else atomic_read_json(str(TRAILING_STOPS_FILE))
+    if stops_data:
+        for stop in stops_data.get("active_stops", []):
+            if stop.get("symbol") == symbol and stop.get("status") == "ACTIVE":
+                opened_at = stop.get("opened_at", "")
+                if opened_at:
+                    try:
+                        open_dt = datetime.fromisoformat(opened_at)
+                        if open_dt.tzinfo is None:
+                            open_dt = open_dt.replace(tzinfo=timezone.utc)
+                        age_days = (datetime.now(timezone.utc) - open_dt).total_seconds() / 86400
+                        entry_p = stop.get("entry_price", 0)
+                        gain_pct = ((price - entry_p) / entry_p * 100) if entry_p > 0 else 0
+                        if age_days > stale_days and gain_pct < stale_min_gain:
+                            signals.append({
+                                "symbol": symbol,
+                                "strategy": stop.get("strategy_source", "CRYPTO_STRATEGY"),
+                                "action": "SELL",
+                                "signal_type": "stale_position_exit",
+                                "full_close": True,
+                                "strength": "MODERATE",
+                                "reason": f"Position open {age_days:.0f}d with only {gain_pct:+.1f}% gain (threshold: {stale_days}d, {stale_min_gain}%)",
+                                "indicators": indicators,
+                            })
+                    except Exception:
+                        pass
+
+    # --- Signal 5: Volume-Confirmed Bullish Engulfing ---
+    # Current candle engulfs previous bearish candle with above-average volume
+    ve_p = _get_signal_params(params, "volume_engulfing_bullish")
+    if ve_p.get("enabled", True) and len(df) >= 3 and above_vwap and not is_choppy:
+        curr = df.iloc[-1]
+        prev_c = df.iloc[-2]
+        curr_bullish = curr["close"] > curr["open"]
+        prev_bearish = prev_c["close"] < prev_c["open"]
+        body_engulfs = curr["close"] > prev_c["open"] and curr["open"] < prev_c["close"]
+        va5 = curr.get("vol_avg_5", np.nan)
+        engulf_vol_mult = ve_p.get("engulf_vol_multiplier", 1.5)
+        vol_confirms = curr["volume"] >= va5 * engulf_vol_mult if not np.isnan(va5) and va5 > 0 else False
+
+        if curr_bullish and prev_bearish and body_engulfs and vol_confirms:
+            vol_ratio = curr["volume"] / va5 if va5 > 0 else 0
+            signals.append({
+                "symbol": symbol,
+                "strategy": "CRYPTO_TREND",
+                "action": "BUY",
+                "signal_type": "volume_engulfing_bullish",
+                "strength": "STRONG",
+                "reason": f"Bullish engulfing with {vol_ratio:.1f}x avg volume, above VWAP",
+                "indicators": indicators,
+            })
+
+    # --- Signal 6: Body Momentum Crossover ---
+    # Bullish body sum overtakes bearish body sum while price > EMA55
+    bm_p = _get_signal_params(params, "body_momentum_bullish")
+    if bm_p.get("enabled", True) and not np.isnan(bull_body_sum) and not np.isnan(bear_body_sum) and above_vwap and not is_choppy:
+        prev_bull = prev.get("bull_body_sum", 0) if not np.isnan(prev.get("bull_body_sum", np.nan)) else 0
+        prev_bear = prev.get("bear_body_sum", 0) if not np.isnan(prev.get("bear_body_sum", np.nan)) else 0
+
+        # Guard: skip crossover if previous bars had no body data (both 0)
+        if bull_body_sum > bear_body_sum and prev_bull <= prev_bear and price > ema55 and not (prev_bull == 0 and prev_bear == 0):
+            signals.append({
+                "symbol": symbol,
+                "strategy": "CRYPTO_TREND",
+                "action": "BUY",
+                "signal_type": "body_momentum_bullish",
+                "strength": "MODERATE",
+                "reason": f"Bullish body momentum crossover (bull={bull_body_sum:.2f} > bear={bear_body_sum:.2f}), price > EMA55",
+                "indicators": indicators,
+            })
 
     # --- Borderline signals: lean toward trading ---
     # If no buy signals yet, check for near-signals
@@ -423,47 +855,74 @@ def generate_signals(df, symbol):
     buy_signals = [s for s in signals if s["action"] == "BUY"]
     if not buy_signals:
         # Near mean-reversion: price within 2% of lower BB or RSI < 43
-        near_bb = price < bb_lower * 1.02
-        near_oversold = rsi < 38
-        if near_bb or near_oversold:
-            signals.append({
-                "symbol": symbol,
-                "strategy": "CRYPTO_DCA",
-                "action": "BUY",
-                "signal_type": "borderline_dca",
-                "strength": "WEAK",
-                "reason": f"Borderline DCA: price near lower BB ({price:.2f} vs {bb_lower:.2f}), RSI={rsi:.1f}",
-                "indicators": indicators,
-                "aggressive": False,
-            })
+        bdca_p = _get_signal_params(params, "borderline_dca")
+        if bdca_p.get("enabled", True):
+            near_bb = price < bb_lower * 1.02
+            near_oversold = rsi < 38
+            if (near_bb or near_oversold) and not is_choppy:
+                signals.append({
+                    "symbol": symbol,
+                    "strategy": "CRYPTO_DCA",
+                    "action": "BUY",
+                    "signal_type": "borderline_dca",
+                    "strength": "WEAK",
+                    "reason": f"Borderline DCA: price near lower BB ({price:.2f} vs {bb_lower:.2f}), RSI={rsi:.1f}",
+                    "indicators": indicators,
+                    "aggressive": False,
+                })
 
-        # Near trend: EMAs partially aligned or RSI borderline
-        if (ema9 > ema21 and ema9 > ema55 and rsi > 45 and is_trending) or (ema9 > ema55 and rsi > 50 and is_trending):
-            signals.append({
-                "symbol": symbol,
-                "strategy": "CRYPTO_TREND",
-                "action": "BUY",
-                "signal_type": "borderline_trend",
-                "strength": "WEAK",
-                "reason": f"Near-trend: EMA9>EMA55={ema9>ema55}, EMA9>EMA21={ema9>ema21}, RSI={rsi:.1f}",
-                "indicators": indicators,
-                "recent_crossover": False,
-            })
+        # Near trend: EMAs partially aligned or RSI borderline (VWAP gated)
+        bt_p = _get_signal_params(params, "borderline_trend")
+        if bt_p.get("enabled", True):
+            if above_vwap and not is_choppy and ((ema9 > ema21 and ema9 > ema55 and rsi > 45 and is_trending) or (ema9 > ema55 and rsi > 50 and is_trending)):
+                signals.append({
+                    "symbol": symbol,
+                    "strategy": "CRYPTO_TREND",
+                    "action": "BUY",
+                    "signal_type": "borderline_trend",
+                    "strength": "WEAK",
+                    "reason": f"Near-trend: EMA9>EMA55={ema9>ema55}, EMA9>EMA21={ema9>ema21}, RSI={rsi:.1f}",
+                    "indicators": indicators,
+                    "recent_crossover": False,
+                })
 
         # BB lower-half accumulation: price in lower 45% of BB with moderate RSI
-        if bb_pos is not None and not np.isnan(bb_pos) and bb_pos < 0.30 and rsi < 40:
-            signals.append({
-                "symbol": symbol,
-                "strategy": "CRYPTO_DCA",
-                "action": "BUY",
-                "signal_type": "bb_accumulation",
-                "strength": "WEAK",
-                "reason": f"BB accumulation zone: BB_pos={bb_pos:.2f} (lower 45%), RSI={rsi:.1f}",
-                "indicators": indicators,
-                "aggressive": False,
-            })
+        ba_p = _get_signal_params(params, "bb_accumulation")
+        if ba_p.get("enabled", True):
+            if bb_pos is not None and not np.isnan(bb_pos) and bb_pos < 0.30 and rsi < 40 and not is_choppy:
+                signals.append({
+                    "symbol": symbol,
+                    "strategy": "CRYPTO_DCA",
+                    "action": "BUY",
+                    "signal_type": "bb_accumulation",
+                    "strength": "WEAK",
+                    "reason": f"BB accumulation zone: BB_pos={bb_pos:.2f} (lower 45%), RSI={rsi:.1f}",
+                    "indicators": indicators,
+                    "aggressive": False,
+                })
 
     return signals
+
+
+# ============================================================
+# BLOCKED-TRADE LOGGING (feeds self-improvement visibility)
+# ============================================================
+
+def log_blocked_signal(symbol, strategy, signal_type, filter_name, reason, indicators=None):
+    """Log a blocked signal to trades.jsonl so self-improvement can see filter impact."""
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "strategy": strategy,
+        "action": "BLOCKED",
+        "symbol": symbol,
+        "signal_type": signal_type,
+        "filter": filter_name,
+        "reason": reason,
+        "pnl": 0,
+    }
+    if indicators:
+        record["indicators"] = indicators
+    log_trade(record)
 
 
 # ============================================================
@@ -531,10 +990,17 @@ def place_crypto_sell(trading_client, symbol, qty, strategy_name, signal):
 # ============================================================
 
 def log_trade(trade_record):
-    """Append a trade record to logs/trades.jsonl."""
+    """Append a trade record to logs/trades.jsonl with file locking."""
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(TRADES_LOG, "a", encoding="utf-8") as f:
-        f.write(json.dumps(trade_record, default=str) + "\n")
+    line = json.dumps(trade_record, default=str) + "\n"
+    try:
+        with file_lock(str(TRADES_LOG)):
+            with open(TRADES_LOG, "a", encoding="utf-8") as f:
+                f.write(line)
+    except Exception:
+        # Fallback: write without lock rather than lose the trade record
+        with open(TRADES_LOG, "a", encoding="utf-8") as f:
+            f.write(line)
 
 
 # ============================================================
@@ -542,18 +1008,13 @@ def log_trade(trade_record):
 # ============================================================
 
 def update_positions(new_trades, trading_client):
-    """Update state/positions.json with new crypto positions."""
-    positions_data = atomic_read_json(str(POSITIONS_FILE))
-    if positions_data is None:
-        positions_data = {
-            "schema_version": "1.0.0",
-            "last_reconciled": datetime.now(timezone.utc).isoformat(),
-            "positions": [],
-            "pending_orders": [],
-            "totals": {}
-        }
+    """Update state/positions.json with new crypto positions.
+    Uses locked_read_modify_write to prevent race with reconcile.py."""
 
-    # Fetch current account info
+    # Pre-fetch from Alpaca outside the lock (network I/O shouldn't hold lock)
+    cash = ACCOUNT_VALUE_APPROX * CASH_RESERVE_PCT
+    equity = ACCOUNT_VALUE_APPROX
+    alpaca_positions_list = None
     try:
         account = trading_client.get_account()
         cash = float(account.cash)
@@ -561,45 +1022,58 @@ def update_positions(new_trades, trading_client):
     except Exception as e:
         if not QUIET:
             print(f"  Warning: Could not fetch account info: {e}")
-        cash = positions_data.get("totals", {}).get("cash_available", 0)
-        equity = ACCOUNT_VALUE_APPROX
 
-    # Fetch all current positions from Alpaca
     try:
-        alpaca_positions = trading_client.get_all_positions()
-        updated_positions = []
-        for pos in alpaca_positions:
-            updated_positions.append({
-                "symbol": pos.symbol,
-                "asset_class": str(pos.asset_class),
-                "strategy": _find_strategy_for_position(pos.symbol, positions_data),
-                "qty": float(pos.qty),
-                "entry_price": float(pos.avg_entry_price),
-                "current_price": float(pos.current_price),
-                "market_value": float(pos.market_value),
-                "cost_basis": float(pos.cost_basis),
-                "unrealized_pnl": float(pos.unrealized_pl),
-                "opened_at": datetime.now(timezone.utc).isoformat(),
-            })
-        positions_data["positions"] = updated_positions
+        alpaca_positions_list = trading_client.get_all_positions()
     except Exception as e:
         if not QUIET:
             print(f"  Warning: Could not fetch positions from Alpaca: {e}")
 
-    # Update totals
-    total_value = sum(p.get("market_value", 0) for p in positions_data.get("positions", []))
-    pending_value = sum(p.get("estimated_value", 0) for p in positions_data.get("pending_orders", []))
-    positions_data["last_reconciled"] = datetime.now(timezone.utc).isoformat()
-    positions_data["totals"] = {
-        "total_positions": len(positions_data.get("positions", [])),
-        "total_pending": len(positions_data.get("pending_orders", [])),
-        "total_value": round(total_value + pending_value, 2),
-        "cash_available": round(cash, 2),
-        "cash_reserved_pct": round((cash / equity) * 100, 1) if equity > 0 else 0,
-        "deployed_pct": round(((equity - cash) / equity) * 100, 1) if equity > 0 else 0,
-    }
+    def _modify_positions(positions_data):
+        if positions_data is None:
+            positions_data = {
+                "schema_version": "1.0.0",
+                "last_reconciled": datetime.now(timezone.utc).isoformat(),
+                "positions": [],
+                "pending_orders": [],
+                "totals": {}
+            }
 
-    atomic_write_json(str(POSITIONS_FILE), positions_data)
+        nonlocal cash, equity
+        if cash == 0:
+            cash = positions_data.get("totals", {}).get("cash_available", 0)
+
+        if alpaca_positions_list is not None:
+            updated_positions = []
+            for pos in alpaca_positions_list:
+                updated_positions.append({
+                    "symbol": pos.symbol,
+                    "asset_class": str(pos.asset_class),
+                    "strategy": _find_strategy_for_position(pos.symbol, positions_data),
+                    "qty": float(pos.qty),
+                    "entry_price": float(pos.avg_entry_price),
+                    "current_price": float(pos.current_price),
+                    "market_value": float(pos.market_value),
+                    "cost_basis": float(pos.cost_basis),
+                    "unrealized_pnl": float(pos.unrealized_pl),
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                })
+            positions_data["positions"] = updated_positions
+
+        total_value = sum(p.get("market_value", 0) for p in positions_data.get("positions", []))
+        pending_value = sum(p.get("estimated_value", 0) for p in positions_data.get("pending_orders", []))
+        positions_data["last_reconciled"] = datetime.now(timezone.utc).isoformat()
+        positions_data["totals"] = {
+            "total_positions": len(positions_data.get("positions", [])),
+            "total_pending": len(positions_data.get("pending_orders", [])),
+            "total_value": round(total_value + pending_value, 2),
+            "cash_available": round(cash, 2),
+            "cash_reserved_pct": round((cash / equity) * 100, 1) if equity > 0 else 0,
+            "deployed_pct": round(((equity - cash) / equity) * 100, 1) if equity > 0 else 0,
+        }
+        return positions_data
+
+    locked_read_modify_write(str(POSITIONS_FILE), _modify_positions)
     if not QUIET:
         print(f"  Positions updated: {len(positions_data.get('positions', []))} active, ${cash:.2f} cash")
 
@@ -616,71 +1090,156 @@ def _find_strategy_for_position(symbol, positions_data):
 
 
 def update_trailing_stops(new_trades, params=None):
-    """Add new crypto positions to trailing stops state, or update existing ones for DCA buys."""
-    stops_data = atomic_read_json(str(TRAILING_STOPS_FILE))
-    if stops_data is None:
-        stops_data = {"schema_version": "1.0.0", "active_stops": [], "closed_stops": []}
+    """Add new crypto positions to trailing stops state, or update existing ones for DCA buys.
+    Uses locked_read_modify_write to prevent race conditions with trailing_stop_monitor."""
 
-    # Build lookup by symbol
-    stops_by_symbol = {}
-    for i, stop in enumerate(stops_data.get("active_stops", [])):
-        stops_by_symbol[stop.get("symbol")] = i
+    def _modify_stops(stops_data):
+        if stops_data is None:
+            stops_data = {"schema_version": "1.0.0", "active_stops": [], "closed_stops": []}
 
-    for trade in new_trades:
-        if trade.get("action") != "BUY" or "error" in trade:
-            continue
+        # Build lookup by symbol+timeframe so 15M and 1H stops are independent
+        stops_by_key = {}
+        for i, stop in enumerate(stops_data.get("active_stops", [])):
+            stop_key = f"{stop.get('symbol')}_{stop.get('timeframe', '1H')}"
+            stops_by_key[stop_key] = i
 
-        symbol = trade.get("symbol")
-        price = trade.get("fill_price") or trade.get("indicators", {}).get("price", 0)
-        qty = trade.get("fill_qty", 0)
-        if price <= 0 or qty <= 0:
-            continue
+        for trade in new_trades:
+            if trade.get("action") != "BUY" or "error" in trade:
+                continue
 
-        if symbol in stops_by_symbol:
-            # UPDATE existing stop — accumulate quantity, recalculate avg entry
-            idx = stops_by_symbol[symbol]
-            stop = stops_data["active_stops"][idx]
-            old_qty = stop.get("qty", 0)
-            old_entry = stop.get("entry_price", price)
-            new_total_qty = old_qty + qty
-            # Weighted average entry price
-            new_entry = ((old_entry * old_qty) + (price * qty)) / new_total_qty if new_total_qty > 0 else price
-            stop["qty"] = round(new_total_qty, 9)
-            stop["entry_price"] = round(new_entry, 6)
-            stop["last_checked"] = datetime.now(timezone.utc).isoformat()
-            if not QUIET:
-                print(f"  Updated trailing stop for {symbol}: qty {old_qty:.6f} -> {new_total_qty:.6f}, avg entry ${old_entry:.4f} -> ${new_entry:.4f}")
-        else:
-            # NEW symbol — create new stop entry
-            stops_data["active_stops"].append({
-                "symbol": symbol,
-                "asset_class": "crypto",
-                "entry_order_id": trade.get("order_id", ""),
-                "qty": round(qty, 9),
-                "entry_price": round(price, 6),
-                "highest_price": round(price, 6),
-                "floor_price": round(price * (1 - (params or {}).get("loss_pct", 5.0) / 100), 4),
-                "trail_pct": (params or {}).get("trail_pct", 5.0),
-                "loss_pct": (params or {}).get("loss_pct", 5.0),
-                "status": "ACTIVE",
-                "trailing_stop_order_id": None,
-                "opened_at": datetime.now(timezone.utc).isoformat(),
-                "last_checked": datetime.now(timezone.utc).isoformat(),
-                "strategy_source": trade.get("strategy", "CRYPTO_STRATEGY"),
-            })
-            stops_by_symbol[symbol] = len(stops_data["active_stops"]) - 1
-            floor = price * (1 - (params or {}).get("loss_pct", 5.0) / 100)
-            if not QUIET:
-                print(f"  New trailing stop for {symbol}: qty={qty:.6f}, entry=${price:.4f}, floor=${floor:.4f}")
+            symbol = trade.get("symbol")
+            trade_tf = trade.get("timeframe", "1H")
+            trade_key = f"{symbol}_{trade_tf}"
+            price = trade.get("fill_price") or trade.get("indicators", {}).get("price", 0)
+            qty = trade.get("fill_qty", 0)
+            if price <= 0 or qty <= 0:
+                continue
 
-    atomic_write_json(str(TRAILING_STOPS_FILE), stops_data)
+            if trade_key in stops_by_key:
+                idx = stops_by_key[trade_key]
+                stop = stops_data["active_stops"][idx]
+                old_qty = stop.get("qty", 0)
+                old_entry = stop.get("entry_price", price)
+                new_total_qty = old_qty + qty
+                new_entry = ((old_entry * old_qty) + (price * qty)) / new_total_qty if new_total_qty > 0 else price
+                stop["qty"] = round(new_total_qty, 9)
+                stop["entry_price"] = round(new_entry, 6)
+                stop["last_checked"] = datetime.now(timezone.utc).isoformat()
+                if not QUIET:
+                    print(f"  Updated trailing stop for {symbol}: qty {old_qty:.6f} -> {new_total_qty:.6f}, avg entry ${old_entry:.4f} -> ${new_entry:.4f}")
+            else:
+                loss_pct = (params or {}).get("loss_pct", 5.0)
+                fixed_floor = price * (1 - loss_pct / 100)
+
+                atr_value = trade.get("indicators", {}).get("atr")
+                stop_atr_mult = (params or {}).get("stop_atr_multiplier", 2.0)
+                atr_floor = None
+                if atr_value is not None and atr_value > 0:
+                    atr_floor = price - (atr_value * stop_atr_mult)
+
+                ema_value = trade.get("indicators", {}).get("ema9")
+                ema_floor = None
+                if ema_value is not None and ema_value > 0:
+                    ema_floor = ema_value * (1 - (params or {}).get("ema_trail_buffer_pct", 0.5) / 100)
+
+                floor = fixed_floor
+                if atr_floor is not None and atr_floor > floor:
+                    floor = atr_floor
+                if ema_floor is not None and ema_floor > floor:
+                    floor = ema_floor
+
+                # ATR-based dynamic trail: 2 * ATR / price * 100, clamped to [2%, 15%]
+                atr_for_trail = trade.get("indicators", {}).get("atr")
+                if atr_for_trail and price > 0:
+                    dynamic_trail = round((2.0 * float(atr_for_trail)) / price * 100, 2)
+                    dynamic_trail = max(2.0, min(15.0, dynamic_trail))
+                else:
+                    dynamic_trail = (params or {}).get("trail_pct", 5.0)
+
+                stop_entry = {
+                    "symbol": symbol,
+                    "asset_class": "crypto",
+                    "entry_order_id": trade.get("order_id", ""),
+                    "qty": round(qty, 9),
+                    "entry_price": round(price, 6),
+                    "highest_price": round(price, 6),
+                    "floor_price": round(floor, 4),
+                    "trail_pct": dynamic_trail,
+                    "loss_pct": loss_pct,
+                    "status": "ACTIVE",
+                    "trailing_stop_order_id": None,
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                    "last_checked": datetime.now(timezone.utc).isoformat(),
+                    "strategy_source": trade.get("strategy", "CRYPTO_STRATEGY"),
+                    "entry_signal_type": trade.get("signal_type", "unknown"),
+                    "timeframe": trade.get("timeframe", "1H"),
+                }
+                if atr_floor is not None:
+                    stop_entry["atr_floor"] = round(atr_floor, 4)
+                if ema_floor is not None:
+                    stop_entry["ema_trail_floor"] = round(ema_floor, 4)
+                stops_data["active_stops"].append(stop_entry)
+                stops_by_key[trade_key] = len(stops_data["active_stops"]) - 1
+                if not QUIET:
+                    atr_info = f", atr_floor=${atr_floor:.4f}" if atr_floor is not None else ""
+                    print(f"  New trailing stop for {symbol}: qty={qty:.6f}, entry=${price:.4f}, floor=${floor:.4f}{atr_info}")
+
+        return stops_data
+
+    locked_read_modify_write(str(TRAILING_STOPS_FILE), _modify_stops)
     if not QUIET:
+        stops_data = atomic_read_json(str(TRAILING_STOPS_FILE)) or {}
         print(f"  Trailing stops updated: {len(stops_data.get('active_stops', []))} active")
 
 
 # ============================================================
 # MAIN
 # ============================================================
+
+def update_ema_trail_floors(all_data, params):
+    """Update EMA-based trailing floors for all active crypto stops.
+    Uses EMA9 as a dynamic floor -- ride winners while trend holds.
+    Uses locked_read_modify_write to prevent race conditions."""
+    if not params.get("ema_trail_enabled", True):
+        return
+
+    buffer_pct = params.get("ema_trail_buffer_pct", 0.5)
+
+    def _modify_ema_floors(stops_data):
+        if not stops_data:
+            return stops_data or {}
+
+        for stop in stops_data.get("active_stops", []):
+            symbol = stop.get("symbol", "")
+            if stop.get("asset_class") != "crypto" or stop.get("status") != "ACTIVE":
+                continue
+
+            key_1h = f"{symbol}_1H"
+            if key_1h not in all_data:
+                continue
+
+            df = all_data[key_1h]
+            if df.empty or "ema9" not in df.columns:
+                continue
+
+            ema9_val = float(df.iloc[-1]["ema9"])
+            if ema9_val <= 0 or np.isnan(ema9_val):
+                continue
+
+            ema_floor = round(ema9_val * (1 - buffer_pct / 100), 4)
+            old_floor = stop.get("floor_price", 0)
+
+            stop["ema_trail_floor"] = ema_floor
+
+            if ema_floor > old_floor:
+                stop["floor_price"] = ema_floor
+                if not QUIET:
+                    print(f"  {symbol}: EMA floor raised ${old_floor:.4f} -> ${ema_floor:.4f} (EMA9=${ema9_val:.4f})")
+
+        return stops_data
+
+    locked_read_modify_write(str(TRAILING_STOPS_FILE), _modify_ema_floors)
+
 
 def main():
     now = datetime.now(timezone.utc)
@@ -689,6 +1248,9 @@ def main():
         print(f"ATLAS Lite Crypto Strategy Engine")
         print(f"Run time: {now.isoformat()}")
         print("=" * 70)
+
+    if not acquire_pid_lock():
+        return
 
     # ---- Load dynamic parameters from config ----
     params = load_params()
@@ -699,54 +1261,62 @@ def main():
         print(f"  Position size: ${params['position_size_usd']}")
         print(f"  BB period: {params['bb_period']}, std: {params['bb_std']}")
 
-    # Override module-level constants with config values
-    global CRYPTO_WATCHLIST, POSITION_SIZE_USD, BB_PERIOD, BB_STD, RSI_PERIOD
-    global RSI_OVERSOLD, RSI_OVERBOUGHT, EMA_FAST, EMA_MED, EMA_LONG
-    global ATR_PERIOD, DCA_RSI_THRESHOLD, DCA_AGGRESSIVE_RSI, STOP_ATR_MULTIPLIER
-    global MIN_POSITION_USD, MAX_POSITION_USD
-
-    CRYPTO_WATCHLIST = params["watchlist"]
-    POSITION_SIZE_USD = params["position_size_usd"]
-    BB_PERIOD = params["bb_period"]
-    BB_STD = params["bb_std"]
-    RSI_PERIOD = params["rsi_period"]
-    RSI_OVERSOLD = params["rsi_oversold"]
-    RSI_OVERBOUGHT = params["rsi_overbought"]
-    EMA_FAST = params["ema_fast"]
-    EMA_MED = params["ema_med"]
-    EMA_LONG = params["ema_long"]
-    ATR_PERIOD = params["atr_period"]
-    DCA_RSI_THRESHOLD = params["dca_rsi_threshold"]
-    DCA_AGGRESSIVE_RSI = params["dca_aggressive_rsi"]
-    STOP_ATR_MULTIPLIER = params["stop_atr_multiplier"]
-
-    bounds = params["position_size_bounds"]
-    MIN_POSITION_USD = bounds[0]
-    MAX_POSITION_USD = bounds[1]
+    # Extract watchlist for the for-loop iteration
+    watchlist = params["watchlist"]
 
     if not QUIET:
-        print(f"Watchlist: {', '.join(CRYPTO_WATCHLIST)}")
+        print(f"Watchlist: {', '.join(watchlist)}")
 
     # Load signal quality scores (if available)
     SIGNAL_SCORES_FILE = STATE_DIR / "signal_scores.json"
     signal_scores = atomic_read_json(str(SIGNAL_SCORES_FILE))
     disabled_signals = set()
+    probation_signals = set()  # F-grade signals with improving recent performance
     if signal_scores and "signal_scoreboard" in signal_scores:
         for sig_name, score in signal_scores["signal_scoreboard"].items():
             if score.get("grade") == "F" and score.get("closed_trades", 0) >= 5:
-                disabled_signals.add(sig_name)
-                if not QUIET:
-                    print(f"  Signal '{sig_name}' DISABLED — F grade ({score.get('win_rate', 0):.0%} win rate)")
-        if not disabled_signals and not QUIET:
+                # Check if recent performance shows recovery (win_rate > 30%)
+                recent_win_rate = score.get("recent_win_rate")
+                if recent_win_rate is None:
+                    # Approximate from overall stats if recent_win_rate not tracked yet
+                    recent_win_rate = score.get("win_rate", 0.0)
+                if recent_win_rate > 0.30:
+                    probation_signals.add(sig_name)
+                    if not QUIET:
+                        print(f"  Signal '{sig_name}' on PROBATION — F grade but recent win rate "
+                              f"{recent_win_rate:.0%} > 30%, using 50% position size")
+                else:
+                    disabled_signals.add(sig_name)
+                    if not QUIET:
+                        print(f"  Signal '{sig_name}' DISABLED — F grade ({score.get('win_rate', 0):.0%} win rate)")
+        if not disabled_signals and not probation_signals and not QUIET:
             print(f"  All signals active (scores loaded for {len(signal_scores['signal_scoreboard'])} signals)")
     elif not QUIET:
         print(f"  Signal scores not available yet — all signals active")
+
+    # Load adaptive signal weights (Phase 4)
+    SIGNAL_WEIGHTS_FILE = STATE_DIR / "signal_weights.json"
+    signal_weights_data = atomic_read_json(str(SIGNAL_WEIGHTS_FILE))
+    signal_weights = {}
+    if signal_weights_data and "weights" in signal_weights_data:
+        signal_weights = {k: v.get("weight", 1.0) for k, v in signal_weights_data["weights"].items()}
+        if not QUIET:
+            low = [k for k, v in signal_weights.items() if v < 0.5]
+            high = [k for k, v in signal_weights.items() if v > 1.2]
+            print(f"  Signal weights loaded: {len(signal_weights)} signals")
+            if low:
+                print(f"    Low-weight signals: {', '.join(low)}")
+            if high:
+                print(f"    High-conviction signals: {', '.join(high)}")
+    elif not QUIET:
+        print(f"  Signal weights not available yet — all signals at default weight 1.0")
 
     # ---- Initialize clients ----
     if not QUIET:
         print("\n[1/6] Initializing Alpaca clients...")
     data_client = CryptoHistoricalDataClient()  # No keys needed for crypto data
     trading_client = TradingClient(API_KEY, SECRET_KEY, paper=PAPER)
+    configure_client_timeouts(trading_client)
 
     # Verify account
     try:
@@ -755,11 +1325,19 @@ def main():
         cash = float(account.cash)
         if not QUIET:
             print(f"  Account: equity=${equity:,.2f}, cash=${cash:,.2f}")
-            print(f"  Cash reserve needed (20%): ${equity * CASH_RESERVE_PCT:,.2f}")
-            available = cash - (equity * CASH_RESERVE_PCT)
+            print(f"  Cash reserve needed (20%): ${equity * params.get('cash_reserve_pct', 0.20):,.2f}")
+            available = cash - (equity * params.get("cash_reserve_pct", 0.20))
             print(f"  Available for new trades: ${available:,.2f}")
     except Exception as e:
         print(f"  ERROR connecting to Alpaca: {e}")
+        log_trade({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "strategy": "SYSTEM",
+            "action": "API_FAILURE",
+            "symbol": "ALPACA",
+            "reason": str(e),
+            "pnl": 0,
+        })
         return
 
     # ---- Check regime filter ----
@@ -775,7 +1353,7 @@ def main():
 
         if regime == "RISK_OFF":
             if QUIET:
-                print(f"[QUIET] {len(CRYPTO_WATCHLIST)} pairs scanned, 0 signals triggered (RISK_OFF)")
+                print(f"[QUIET] {len(watchlist)} pairs scanned, 0 signals triggered (RISK_OFF)")
             else:
                 print("  RISK_OFF regime — NO new entries allowed. Exiting.")
                 print("  (Existing positions will be managed by trailing stop monitor)")
@@ -811,18 +1389,28 @@ def main():
         print("\n[2/6] Fetching crypto bar data...")
     all_data = {}
 
-    for timeframe_name, timeframe, bars_needed in [("1H", TimeFrame.Hour, 200), ("4H", TimeFrame(4, TimeFrame.Hour.unit), 200)]:
-        start_time = now - timedelta(hours=bars_needed * (4 if "4H" in timeframe_name else 1))
+    for timeframe_name, timeframe, bars_needed in [
+        ("15M", TimeFrame(15, TimeFrame.Minute.unit), 200),
+        ("1H", TimeFrame.Hour, 200),
+        ("4H", TimeFrame(4, TimeFrame.Hour.unit), 200),
+    ]:
+        if "15M" in timeframe_name:
+            tf_hours = 0.25  # 15 min = 0.25 hours
+        elif "4H" in timeframe_name:
+            tf_hours = 4
+        else:
+            tf_hours = 1
+        start_time = now - timedelta(hours=bars_needed * tf_hours)
         try:
             request = CryptoBarsRequest(
-                symbol_or_symbols=CRYPTO_WATCHLIST,
+                symbol_or_symbols=watchlist,
                 timeframe=timeframe,
                 start=start_time,
                 end=now,
             )
             bars = data_client.get_crypto_bars(request)
 
-            for symbol in CRYPTO_WATCHLIST:
+            for symbol in watchlist:
                 key = f"{symbol}_{timeframe_name}"
                 try:
                     symbol_bars = bars[symbol]
@@ -839,7 +1427,7 @@ def main():
                     df = pd.DataFrame(rows)
                     if not df.empty:
                         df = df.sort_values("timestamp").reset_index(drop=True)
-                        df = compute_indicators(df)
+                        df = compute_indicators(df, params)
                         all_data[key] = df
                         if not QUIET:
                             print(f"  {key}: {len(df)} bars loaded, latest close=${df.iloc[-1]['close']:.4f}")
@@ -857,23 +1445,154 @@ def main():
         print("\nFATAL: No data fetched. Exiting.")
         return
 
+    # ---- Fetch Binance funding rates ----
+    funding_rates = {}
+    try:
+        if not QUIET:
+            print("\n[2.7/6] Fetching Binance funding rates...")
+        funding_rates = fetch_funding_rates(watchlist)
+        if not QUIET:
+            funded = {k: v for k, v in funding_rates.items() if v is not None}
+            print(f"  Rates: {len(funded)}/{len(watchlist)} symbols")
+    except Exception as e:
+        if not QUIET:
+            print(f"  Funding rate fetch failed: {e}")
+
+    # ---- Cross-asset intelligence: BTC features for altcoin signals ----
+    btc_features = None
+    btc_key = "BTC/USD_1H"
+    if btc_key in all_data:
+        btc_df = all_data[btc_key]
+        if not btc_df.empty and len(btc_df) > 60:
+            btc_latest = btc_df.iloc[-1]
+            btc_close = float(btc_latest["close"])
+            if btc_close > 0:
+                btc_features = {
+                    "btc_rsi": round(float(btc_latest.get("rsi", np.nan)), 2) if not np.isnan(btc_latest.get("rsi", np.nan)) else None,
+                    "btc_adx": round(float(btc_latest.get("adx", np.nan)), 2) if not np.isnan(btc_latest.get("adx", np.nan)) else None,
+                    "btc_vwap_slope": round(float(btc_latest.get("vwap_slope", np.nan)), 4) if not np.isnan(btc_latest.get("vwap_slope", np.nan)) else None,
+                    "btc_ema_alignment": round((float(btc_latest.get("ema9", 0)) - float(btc_latest.get("ema55", 0))) / btc_close * 100, 4),
+                }
+                if not QUIET:
+                    print(f"\n  BTC cross-asset: RSI={btc_features['btc_rsi']}, ADX={btc_features['btc_adx']}")
+
+    # ---- Load ML meta-scorer model (if available) ----
+    ml_model = None
+    ml_metadata = None
+    try:
+        from ml_scorer import load_model, extract_features, predict_confidence
+        result = load_model()
+        if result:
+            ml_model, ml_metadata = result
+            if not QUIET:
+                print(f"  ML model: AUC={ml_metadata.get('cv_auc', 0):.3f}, trained={ml_metadata.get('training_date', '?')[:10]}")
+        elif not QUIET:
+            print(f"  ML model not available -- rule-based mode")
+    except ImportError:
+        if not QUIET:
+            print(f"  ML scorer not installed (pip install xgboost scikit-learn)")
+    except Exception as e:
+        if not QUIET:
+            print(f"  ML model error: {e} -- rule-based fallback")
+
+    # ---- Compute ADR exhaustion filter ----
+    # Uses daily bars for ADR baseline + 1H bars for intraday range
+    # (1H bars avoid the UTC-midnight gap where daily "today" bar has near-zero range)
+    adr_data = {}
+    if params.get("adr_filter_enabled", True):
+        if not QUIET:
+            print("\n[2.5/6] Computing Average Daily Range...")
+        try:
+            adr_lookback = params.get("adr_lookback_days", 10)
+            adr_exhaust_pct = params.get("adr_exhaustion_pct", 85)
+            daily_start = now - timedelta(days=adr_lookback + 2)
+            daily_request = CryptoBarsRequest(
+                symbol_or_symbols=watchlist,
+                timeframe=TimeFrame.Day,
+                start=daily_start,
+                end=now,
+            )
+            daily_bars = data_client.get_crypto_bars(daily_request)
+            for symbol in watchlist:
+                try:
+                    bars_list = list(daily_bars[symbol])
+                    if len(bars_list) >= 2:
+                        # ADR from completed days (exclude today's incomplete bar)
+                        completed = bars_list[:-1][-adr_lookback:]
+                        if len(completed) < 3:
+                            if not QUIET:
+                                print(f"  {symbol}: insufficient daily bars ({len(completed)}), skipping ADR")
+                            continue
+                        ranges = [float(b.high) - float(b.low) for b in completed]
+                        adr = np.mean(ranges) if ranges else 0
+
+                        # Intraday range: use last 24 1H bars for crypto 24/7 accuracy
+                        # This avoids the UTC midnight gap where daily bar has near-zero range
+                        key_1h = f"{symbol}_1H"
+                        if key_1h in all_data and len(all_data[key_1h]) >= 24:
+                            last_24h = all_data[key_1h].tail(24)
+                            today_range = float(last_24h["high"].max() - last_24h["low"].min())
+                        else:
+                            # Fallback to daily bar
+                            today = bars_list[-1]
+                            today_range = float(today.high) - float(today.low)
+
+                        exhaustion_pct = (today_range / adr * 100) if adr > 0 else 0
+                        exhausted = exhaustion_pct >= adr_exhaust_pct
+                        adr_data[symbol] = {
+                            "adr": round(float(adr), 4),
+                            "today_range": round(float(today_range), 4),
+                            "exhaustion_pct": round(float(exhaustion_pct), 1),
+                            "exhausted": exhausted,
+                        }
+                        if not QUIET:
+                            status = "EXHAUSTED" if exhausted else "OK"
+                            print(f"  {symbol}: ADR=${adr:.2f}, today=${today_range:.2f} ({exhaustion_pct:.0f}%) [{status}]")
+                except (KeyError, IndexError):
+                    pass
+        except Exception as e:
+            if not QUIET:
+                print(f"  ADR fetch error: {e}")
+
     # ---- Generate signals ----
     if not QUIET:
         print("\n[3/6] Generating signals...")
     all_signals = []
 
-    for symbol in CRYPTO_WATCHLIST:
+    # Load 15m params once outside the symbol loop
+    params_15m = load_params_15m()
+
+    for symbol in watchlist:
         if not QUIET:
             print(f"\n  --- {symbol} ---")
+
+        # Generate from 15M (if enabled, with 15m-specific params)
+        key_15m = f"{symbol}_15M"
+        if params_15m and key_15m in all_data:
+            sigs_15m = generate_signals(all_data[key_15m], symbol, params_15m, dry_run=False)
+            for s in sigs_15m:
+                s["timeframe"] = "15M"
+                s["signal_type"] = s.get("signal_type", "") + "_15m"  # Tag as 15-min signal
+                fr = funding_rates.get(symbol)
+                if fr is not None:
+                    s.setdefault("indicators", {})["funding_rate"] = round(fr, 8)
+            all_signals.extend(sigs_15m)
+            if not QUIET:
+                for s in sigs_15m:
+                    print(f"    [15M] {s['strategy']} {s['action']} ({s['strength']}): {s['reason']}")
+
         # Prefer 1H data for mean reversion/DCA, 4H for trend following
         key_1h = f"{symbol}_1H"
         key_4h = f"{symbol}_4H"
 
         # Generate from 1H
         if key_1h in all_data:
-            sigs = generate_signals(all_data[key_1h], symbol)
+            sigs = generate_signals(all_data[key_1h], symbol, params)
             for s in sigs:
                 s["timeframe"] = "1H"
+                fr = funding_rates.get(symbol)
+                if fr is not None:
+                    s.setdefault("indicators", {})["funding_rate"] = round(fr, 8)
             all_signals.extend(sigs)
             if not QUIET:
                 if sigs:
@@ -884,10 +1603,13 @@ def main():
 
         # Generate from 4H (only trend signals)
         if key_4h in all_data:
-            sigs_4h = generate_signals(all_data[key_4h], symbol)
+            sigs_4h = generate_signals(all_data[key_4h], symbol, params)
             trend_sigs = [s for s in sigs_4h if "TREND" in s.get("strategy", "")]
             for s in trend_sigs:
                 s["timeframe"] = "4H"
+                fr = funding_rates.get(symbol)
+                if fr is not None:
+                    s.setdefault("indicators", {})["funding_rate"] = round(fr, 8)
             # Avoid duplicate trend signals if already generated on 1H
             existing_trend = any(
                 s["symbol"] == symbol and "TREND" in s["strategy"] and s["action"] == "BUY"
@@ -902,48 +1624,122 @@ def main():
     # ---- Summary of signals ----
     buy_signals = [s for s in all_signals if s["action"] == "BUY"]
     sell_signals = [s for s in all_signals if s["action"] == "SELL"]
+
+    # ---- Multi-timeframe confirmation: 4H trend must agree with 1H/15M buys ----
+    confirmed_buys = []
+    for sig in buy_signals:
+        sym = sig["symbol"]
+        key_4h = f"{sym}_4H"
+        if key_4h in all_data and len(all_data[key_4h]) > 60:
+            df_4h = all_data[key_4h]
+            latest_4h = df_4h.iloc[-1]
+            ema9_4h = float(latest_4h.get("ema9", 0))
+            ema55_4h = float(latest_4h.get("ema55", 0))
+            # 4H trend aligned bullish: EMA9 > EMA55 on higher timeframe
+            if ema9_4h > ema55_4h:
+                confirmed_buys.append(sig)
+            else:
+                if not QUIET:
+                    print(f"  4H FILTER: {sym} {sig.get('signal_type','')} blocked -- 4H EMA9 < EMA55 (bearish higher TF)")
+        else:
+            confirmed_buys.append(sig)  # No 4H data = pass through
+    buy_signals = confirmed_buys
+
     if not QUIET:
-        print(f"\n  TOTAL: {len(buy_signals)} BUY signals, {len(sell_signals)} SELL signals")
+        print(f"\n  TOTAL: {len(buy_signals)} BUY signals (after 4H filter), {len(sell_signals)} SELL signals")
 
     # ---- Execute trades ----
     if not QUIET:
         print("\n[4/6] Executing trades...")
     trades_placed = []
 
-    # De-duplicate: pick the strongest signal per symbol for buys
+    # De-duplicate: pick the highest weighted-score signal per symbol PER TIMEFRAME for buys
     best_buy_per_symbol = {}
     strength_rank = {"STRONG": 3, "MODERATE": 2, "WEAK": 1}
     for sig in buy_signals:
         sym = sig["symbol"]
-        rank = strength_rank.get(sig.get("strength", "WEAK"), 0)
-        if sym not in best_buy_per_symbol or rank > strength_rank.get(best_buy_per_symbol[sym].get("strength", "WEAK"), 0):
-            best_buy_per_symbol[sym] = sig
+        tf = sig.get("timeframe", "1H")
+        dedup_key = f"{sym}_{tf}"
+        raw_score = strength_rank.get(sig.get("strength", "WEAK"), 0)
+        weight = signal_weights.get(sig.get("signal_type", ""), 1.0)
+        weighted_score = raw_score * weight
+        sig["_weighted_score"] = weighted_score
+
+        # Weight < 0.1 = effectively disabled (replaces binary F-grade gate)
+        if weight < 0.1:
+            if not QUIET:
+                print(f"  SKIPPED: {sym} -- signal '{sig['signal_type']}' weight {weight:.2f} (effectively disabled)")
+            continue
+
+        # ML meta-scorer confidence gate
+        if ml_model is not None:
+            try:
+                signal_context = {
+                    "signal_strength": sig.get("strength", "WEAK"),
+                    "signal_weight": weight,
+                    "regime_composite": composite if regime_data else 0,
+                    "entry_quality_score": _score_entry_quality(sig, regime_data),
+                }
+                ml_features = extract_features(
+                    sig.get("indicators", {}), sym,
+                    timestamp=now.isoformat(),
+                    cross_asset_data=btc_features,
+                    signal_context=signal_context,
+                )
+                confidence = predict_confidence(ml_model, ml_features)
+                sig["ml_confidence"] = round(confidence, 4)
+
+                ml_threshold = params.get("shared", params).get("ml_confidence_threshold", 0.0)
+                if confidence < ml_threshold:
+                    if not QUIET:
+                        print(f"  ML BLOCKED: {sym} -- confidence {confidence:.3f} < {ml_threshold}")
+                    log_blocked_signal(sym, sig.get("strategy", ""), sig.get("signal_type", ""),
+                                       "ml_low_confidence", f"confidence={confidence:.3f}", sig.get("indicators"))
+                    continue
+            except Exception as e:
+                sig["ml_confidence"] = 0.5
+                if not QUIET:
+                    print(f"  ML error for {sym}: {e} -- proceeding rule-based")
+
+        if dedup_key not in best_buy_per_symbol or weighted_score > best_buy_per_symbol[dedup_key].get("_weighted_score", 0):
+            best_buy_per_symbol[dedup_key] = sig
 
     # Also include lower-strength signals for symbols without strong signals
     # to ensure we get enough trades
     additional_buys = []
     for sig in buy_signals:
         sym = sig["symbol"]
-        if sym in best_buy_per_symbol and sig is not best_buy_per_symbol[sym]:
-            # Different strategy for same symbol, keep for diversity
-            if sig["strategy"] != best_buy_per_symbol[sym]["strategy"]:
+        tf = sig.get("timeframe", "1H")
+        dedup_key = f"{sym}_{tf}"
+        if dedup_key in best_buy_per_symbol and sig is not best_buy_per_symbol[dedup_key]:
+            # Different strategy for same symbol+timeframe, keep for diversity
+            if sig["strategy"] != best_buy_per_symbol[dedup_key]["strategy"]:
                 additional_buys.append(sig)
 
     # Calculate available cash for new crypto
-    cash_reserve = equity * CASH_RESERVE_PCT
+    position_size_usd = params.get("position_size_usd", 2500)
+    pos_bounds = params.get("position_size_bounds", [1000, 5000])
+    min_position_usd = pos_bounds[0]
+    max_position_usd = pos_bounds[1]
+    cash_reserve = equity * params.get("cash_reserve_pct", 0.20)
     available_cash = cash - cash_reserve
     if not QUIET:
         print(f"  Cash: ${cash:,.2f} | Reserve: ${cash_reserve:,.2f} | Available: ${available_cash:,.2f}")
 
-    if available_cash < MIN_POSITION_USD:
+    if available_cash <= 0:
         if not QUIET:
-            print(f"  WARNING: Available cash (${available_cash:,.2f}) below minimum position size (${MIN_POSITION_USD})")
+            print(f"  NO AVAILABLE CASH after reserve -- skipping all buys")
+        best_buy_per_symbol = {}  # Skip all buys
+        effective_size = 0
+    elif available_cash < min_position_usd:
+        if not QUIET:
+            print(f"  WARNING: Available cash (${available_cash:,.2f}) below minimum position size (${min_position_usd})")
             print(f"  Will attempt smaller trades to generate data...")
         # Reduce position size for data generation
         effective_size = max(500, available_cash / max(len(best_buy_per_symbol), 1))
     else:
-        effective_size = min(POSITION_SIZE_USD, available_cash / max(len(best_buy_per_symbol), 1))
-        effective_size = max(MIN_POSITION_USD, min(MAX_POSITION_USD, effective_size))
+        effective_size = min(position_size_usd, available_cash / max(len(best_buy_per_symbol), 1))
+        effective_size = max(min_position_usd, min(max_position_usd, effective_size))
 
     effective_size = effective_size * CAUTIOUS_MULTIPLIER  # Regime adjustment
     if not QUIET:
@@ -952,7 +1748,8 @@ def main():
 
     # Execute BUY orders
     budget_used = 0
-    for symbol, signal in sorted(best_buy_per_symbol.items()):
+    for dedup_key, signal in sorted(best_buy_per_symbol.items()):
+        symbol = signal["symbol"]  # Extract actual symbol from signal (dedup_key is symbol_timeframe)
         remaining = available_cash - budget_used
         if remaining < 500:
             if not QUIET:
@@ -962,13 +1759,44 @@ def main():
         # Check signal quality gate
         if signal.get("signal_type") in disabled_signals:
             if not QUIET:
-                print(f"  SKIPPED: {symbol} — signal '{signal['signal_type']}' is F-grade disabled")
+                print(f"  SKIPPED: {symbol} -- signal '{signal['signal_type']}' is F-grade disabled")
             continue
 
-        trade_size = min(effective_size, remaining)
+        # ADR exhaustion filter -- don't chase extended daily moves
+        adr_info = adr_data.get(symbol)
+        if adr_info and adr_info.get("exhausted"):
+            if not QUIET:
+                print(f"  SKIPPED: {symbol} -- ADR exhausted ({adr_info['exhaustion_pct']:.0f}% of daily range used)")
+            log_blocked_signal(symbol, signal.get("strategy", "CRYPTO_STRATEGY"), signal.get("signal_type", "unknown"),
+                               "adr_exhaustion", f"ADR {adr_info['exhaustion_pct']:.0f}% > {params.get('adr_exhaustion_pct', 85)}%")
+            continue
+
+        # Use 15-min position size for 15M signals
+        if signal.get("timeframe") == "15M" and params_15m:
+            effective_size_for_signal = params_15m.get("position_size_usd", 500)
+        else:
+            effective_size_for_signal = effective_size  # existing 1H size
+
+        # Probation signals get 50% position size; weight also scales size
+        probation_multiplier = 0.5 if signal.get("signal_type") in probation_signals else 1.0
+        weight = signal_weights.get(signal.get("signal_type", ""), 1.0)
+        ml_conf = signal.get("ml_confidence", 0.5)
+        confidence_mult = 0.5 + ml_conf  # [0.5, 1.5] range based on ML confidence
+        trade_size = min(effective_size_for_signal * probation_multiplier * weight * confidence_mult, remaining)
+        if probation_multiplier < 1.0 and not QUIET:
+            print(f"  PROBATION: {symbol} — signal '{signal['signal_type']}' using 50% size (${trade_size:,.2f})")
         print(f"\n  >>> Executing BUY: {symbol} (${trade_size:,.2f})")
         print(f"      Strategy: {signal['strategy']} | Signal: {signal['signal_type']}")
         print(f"      Reason: {signal['reason']}")
+
+        # Spread validation -- skip if bid-ask spread is too wide
+        spread_ok, spread_pct, midpoint = validate_spread(data_client, symbol)
+        if not spread_ok:
+            if not QUIET:
+                print(f"  SKIPPED: {symbol} -- spread too wide ({spread_pct:.2f}%)")
+            log_blocked_signal(symbol, signal.get("strategy", ""), signal.get("signal_type", ""),
+                               "spread_too_wide", f"spread {spread_pct:.2f}%")
+            continue
 
         order_result = place_crypto_buy(trading_client, symbol, trade_size, signal["strategy"], signal)
 
@@ -1010,9 +1838,16 @@ def main():
                 "regime_at_entry": regime if regime_data else "UNKNOWN",
                 "regime_composite_at_entry": composite if regime_data else 0,
                 "signal_grade": _get_signal_grade(signal.get("signal_type"), signal_scores),
+                "signal_weight": weight,
+                "ml_confidence": signal.get("ml_confidence"),
             }
             trade_record["fill_price"] = fill_price
             trade_record["fill_qty"] = fill_qty
+            trade_record["quote_midpoint"] = midpoint
+
+            # Update adaptive slippage model with actual fill vs midpoint
+            if midpoint and midpoint > 0:
+                update_slippage_model(symbol, fill_price, midpoint)
 
             log_trade(trade_record)
             trades_placed.append(trade_record)
@@ -1033,10 +1868,15 @@ def main():
         symbol = signal["symbol"]
         if symbol in existing_positions:
             pos = existing_positions[symbol]
-            # Sell 25% of position to book partial profit and generate trade data
-            sell_qty = round(float(pos.qty) * 0.25, 8)
+            # Determine sell quantity based on signal type
+            if signal.get("full_close"):
+                sell_qty = round(float(pos.qty), 8)  # Sell 100%
+            else:
+                sell_pct = 0.50 if signal.get("signal_type") == "overbought_exit" else 0.25
+                sell_qty = round(float(pos.qty) * sell_pct, 8)
             if sell_qty > 0:
-                print(f"\n  >>> Executing SELL: {symbol} ({sell_qty} units, 25% of position)")
+                sell_label = "100%" if signal.get("full_close") else ("50%" if signal.get("signal_type") == "overbought_exit" else "25%")
+                print(f"\n  >>> Executing SELL: {symbol} ({sell_qty} units, {sell_label} of position)")
                 print(f"      Reason: {signal['reason']}")
 
                 order_result = place_crypto_sell(trading_client, symbol, sell_qty, signal["strategy"], signal)
@@ -1086,12 +1926,17 @@ def main():
     update_positions(trades_placed, trading_client)
     update_trailing_stops(trades_placed, params)
 
+    # Update EMA dynamic trailing floors for all active crypto stops
+    if not QUIET:
+        print("\n[5.5/6] Updating EMA trailing floors...")
+    update_ema_trail_floors(all_data, params)
+
     # ---- Final summary ----
     buy_trades = [t for t in trades_placed if t["action"] == "BUY"]
     sell_trades = [t for t in trades_placed if t["action"] == "SELL"]
 
     if QUIET and len(trades_placed) == 0:
-        print(f"[QUIET] {len(CRYPTO_WATCHLIST)} pairs scanned, 0 signals triggered")
+        print(f"[QUIET] {len(watchlist)} pairs scanned, 0 signals triggered")
     else:
         print("\n" + "=" * 70)
         print("[6/6] EXECUTION SUMMARY")

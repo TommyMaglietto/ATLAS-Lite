@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-from atomic_write import atomic_write_json, atomic_read_json
+from atomic_write import atomic_write_json, atomic_read_json, normalize_crypto_symbol
 
 POSITIONS_FILE = PROJECT_ROOT / "state" / "positions.json"
 TRAILING_STOPS_FILE = PROJECT_ROOT / "state" / "trailing_stops.json"
@@ -57,10 +57,9 @@ def normalize_symbol(symbol):
     Normalize crypto symbol formats.
     BTCUSD -> BTC/USD, ETHUSD -> ETH/USD, etc.
     Leaves equity symbols unchanged.
+    Delegates to the shared normalize_crypto_symbol() in atomic_write.py.
     """
-    if symbol.endswith("USD") and "/" not in symbol and len(symbol) > 3:
-        return symbol[:-3] + "/USD"
-    return symbol
+    return normalize_crypto_symbol(symbol)
 
 
 def reconcile_positions(local_state, alpaca_positions, alpaca_account):

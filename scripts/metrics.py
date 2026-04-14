@@ -28,9 +28,12 @@ def load_trades(logfile='logs/trades.jsonl'):
     trades = []
     try:
         with open(logfile, 'r') as f:
-            for line in f:
+            for line_num, line in enumerate(f, 1):
                 if line.strip():
-                    trades.append(json.loads(line))
+                    try:
+                        trades.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        print(f"Warning: malformed JSON on line {line_num} of {logfile}, skipping")
     except FileNotFoundError:
         print(f"Warning: {logfile} not found")
     return trades
@@ -47,7 +50,7 @@ def filter_trades_by_days(trades, days=5):
     Returns:
         list: Filtered trades
     """
-    cutoff = datetime.now().astimezone() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     filtered = []
     for t in trades:
         ts_str = t.get('timestamp', '2000-01-01')
@@ -61,17 +64,31 @@ def filter_trades_by_days(trades, days=5):
     return filtered
 
 
-def calculate_sharpe(trades, risk_free_rate=0.02):
+def _load_config_risk_free_rate():
+    """Load risk_free_rate from config/strategy_params.json if available."""
+    try:
+        config_path = Path(__file__).resolve().parent.parent / 'config' / 'strategy_params.json'
+        with open(config_path, 'r') as f:
+            params = json.load(f)
+        return params.get('risk', {}).get('risk_free_rate', 0.045)
+    except Exception:
+        return 0.045
+
+
+def calculate_sharpe(trades, risk_free_rate=None):
     """
     Calculate Sharpe ratio from trades.
 
     Args:
         trades (list): Trade records with 'pnl' field
-        risk_free_rate (float): Annual risk-free rate (default 2%)
+        risk_free_rate (float): Annual risk-free rate. If None, reads from
+            config/strategy_params.json (defaults to 0.045).
 
     Returns:
         float: Sharpe ratio
     """
+    if risk_free_rate is None:
+        risk_free_rate = _load_config_risk_free_rate()
     if not trades:
         return 0.0
 
@@ -248,8 +265,9 @@ def get_unrealized_pnl():
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "source": "alpaca_api"
             }
-    except Exception:
-        pass  # fall through to local state file
+    except Exception as e:
+        print(f"  Warning: Alpaca API unreachable for unrealized PnL: {e}")
+        # fall through to local state file
 
     # Fallback: read from local state/positions.json
     try:
@@ -272,8 +290,8 @@ def get_unrealized_pnl():
             "timestamp": data.get('last_reconciled', datetime.now(timezone.utc).isoformat()),
             "source": "local_state_file"
         }
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  Warning: Could not read local positions.json for unrealized PnL: {e}")
 
     # Nothing available -- return safe empty result
     return {
@@ -338,7 +356,7 @@ def _map_positions_to_strategies():
 
 
 def calculate_total_return_sharpe(trades, unrealized_data, account_equity,
-                                  risk_free_rate=0.02):
+                                  risk_free_rate=None):
     """
     Calculate Sharpe using total returns (realized + unrealized).
 
@@ -356,11 +374,14 @@ def calculate_total_return_sharpe(trades, unrealized_data, account_equity,
         trades (list): Trade records with 'pnl' and 'timestamp' fields.
         unrealized_data (dict): Output of get_unrealized_pnl().
         account_equity (float): Current account equity (used for return %).
-        risk_free_rate (float): Annual risk-free rate (default 2%).
+        risk_free_rate (float): Annual risk-free rate. If None, reads from
+            config/strategy_params.json (defaults to 0.045).
 
     Returns:
         float: Annualised Sharpe ratio.
     """
+    if risk_free_rate is None:
+        risk_free_rate = _load_config_risk_free_rate()
     if account_equity <= 0:
         return 0.0
 

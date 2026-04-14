@@ -521,6 +521,15 @@ def format_report(digest):
     lines.append("+" + "=" * 52 + "+")
     lines.append("")
 
+    # Data freshness warnings
+    data_freshness = digest.get("data_freshness", "live")
+    data_warnings = digest.get("data_warnings", [])
+    if data_warnings:
+        lines.append(f"  DATA FRESHNESS: {data_freshness.upper()}")
+        for w in data_warnings:
+            lines.append(f"    !! {w}")
+        lines.append("")
+
     # Portfolio
     equity = acct.get("equity", 0)
     cash = acct.get("cash", 0)
@@ -689,10 +698,26 @@ def main():
     # 2. Fetch live portfolio from Alpaca (with local fallback)
     # ------------------------------------------------------------------
     print("[2] Fetching portfolio state ...")
+    data_warnings = []
+    data_freshness = "live"
     acct, positions = fetch_alpaca_data()
     if acct is None:
         acct, positions = portfolio_from_local_state()
+        data_freshness = "cached"
+        data_warnings.append("Account data from local cache (Alpaca API unavailable)")
+        # Check staleness of local positions file
+        if POSITIONS_FILE.exists():
+            pos_data = atomic_read_json(str(POSITIONS_FILE)) or {}
+            last_updated = pos_data.get("last_updated", pos_data.get("timestamp", ""))
+            if last_updated:
+                data_warnings.append(f"Position data may be stale (last updated: {last_updated})")
+            else:
+                data_warnings.append("Position data may be stale (last updated: unknown)")
+        else:
+            data_warnings.append("Position data may be stale (positions file not found)")
         print("    (using local state fallback)")
+        for w in data_warnings:
+            print(f"    WARNING: {w}")
     print(f"    Equity:    ${acct.get('equity', 0):,.2f}")
     print(f"    Cash:      ${acct.get('cash', 0):,.2f}")
     print(f"    Positions: {len(positions)}")
@@ -786,6 +811,8 @@ def main():
             "last_updated": regime_data.get("last_updated", ""),
         },
         "recommendations": recs,
+        "data_freshness": data_freshness,
+        "data_warnings": data_warnings,
     }
 
     # ------------------------------------------------------------------

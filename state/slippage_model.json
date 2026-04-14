@@ -1,13 +1,42 @@
 {
-    "schema_version": "1.0.0",
-    "last_updated": null,
-    "default_slippage_pct": 0.10,
-    "assets": {
-        "BTC/USD": {"ema_slippage_pct": 0.03, "samples": 0, "last_updated": null},
-        "ETH/USD": {"ema_slippage_pct": 0.05, "samples": 0, "last_updated": null},
-        "SOL/USD": {"ema_slippage_pct": 0.08, "samples": 0, "last_updated": null},
-        "DOGE/USD": {"ema_slippage_pct": 0.20, "samples": 0, "last_updated": null},
-        "AVAX/USD": {"ema_slippage_pct": 0.10, "samples": 0, "last_updated": null},
-        "LINK/USD": {"ema_slippage_pct": 0.10, "samples": 0, "last_updated": null}
+  "schema_version": "1.0.0",
+  "last_updated": "2026-04-14T17:30:51.958003+00:00",
+  "default_slippage_pct": 0.1,
+  "assets": {
+    "BTC/USD": {
+      "ema_slippage_pct": 0.03,
+      "samples": 0,
+      "last_updated": null
+    },
+    "ETH/USD": {
+      "ema_slippage_pct": 0.05,
+      "samples": 0,
+      "last_updated": null
+    },
+    "SOL/USD": {
+      "ema_slippage_pct": 0.08,
+      "samples": 0,
+      "last_updated": null
+    },
+    "DOGE/USD": {
+      "ema_slippage_pct": 0.2,
+      "samples": 0,
+      "last_updated": null
+    },
+    "AVAX/USD": {
+      "ema_slippage_pct": 0.2833,
+      "samples": 6,
+      "last_updated": "2026-04-14T17:30:51.958003+00:00"
+    },
+    "LINK/USD": {
+      "ema_slippage_pct": 0.1,
+      "samples": 0,
+      "last_updated": null
+    },
+    "ADA/USD": {
+      "ema_slippage_pct": 0.1338,
+      "samples": 15,
+      "last_updated": "2026-04-14T17:30:46.757200+00:00"
     }
+  }
 }

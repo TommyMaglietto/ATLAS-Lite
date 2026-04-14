@@ -29,7 +29,7 @@ from collections import defaultdict
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-from atomic_write import atomic_write_json, atomic_read_json
+from atomic_write import atomic_write_json, atomic_read_json, normalize_crypto_symbol
 
 TRADES_LOG = PROJECT_ROOT / "logs" / "trades.jsonl"
 EXPERIMENTS_FILE = PROJECT_ROOT / "state" / "experiments.json"
@@ -49,10 +49,9 @@ def normalize_symbol(symbol):
     Normalize crypto symbol formats for consistent matching.
     BTCUSD -> BTC/USD, ETHUSD -> ETH/USD, etc.
     Leaves equity symbols unchanged.
+    Delegates to the shared normalize_crypto_symbol() in atomic_write.py.
     """
-    if symbol.endswith("USD") and "/" not in symbol and len(symbol) > 3:
-        return symbol[:-3] + "/USD"
-    return symbol
+    return normalize_crypto_symbol(symbol)
 
 
 def symbol_key(symbol):
@@ -419,6 +418,27 @@ def build_strategy_scoreboard(round_trips):
     return scoreboard
 
 
+def _recommended_weight(win_rate, avg_pnl, closed_trades):
+    """
+    Compute a recommended signal weight (0.0-2.0) based on performance.
+    Used by the adaptive signal weighting system (Phase 4).
+    """
+    if closed_trades < 3:
+        return 1.0
+    base = 1.0
+    if win_rate >= 0.60:
+        base = 1.0 + (win_rate - 0.60) * 1.25
+    elif win_rate >= 0.40:
+        base = 0.5 + (win_rate - 0.40) * 2.5
+    else:
+        base = max(0.1, win_rate * 1.25)
+    if avg_pnl > 0:
+        base *= 1.1
+    elif avg_pnl < -50:
+        base *= 0.7
+    return round(max(0.0, min(2.0, base)), 2)
+
+
 def _score_group(trips):
     """Compute aggregate metrics for a group of round trips."""
     closed = [t for t in trips if t["status"] == "closed"]
@@ -462,6 +482,7 @@ def _score_group(trips):
         "worst_trade_pnl": round(worst_pnl, 2),
         "open_unrealized_pnl": round(open_unrealized, 2),
         "grade": grade,
+        "recommended_weight": _recommended_weight(win_rate, avg_pnl, closed_count),
     }
 
 
@@ -482,13 +503,20 @@ def build_param_correlations():
 
     correlations = defaultdict(list)
 
-    # Include the current experiment if it has enough data
-    current = data.get("current_experiment")
-    if current and current.get("status") == "RUNNING":
+    # Include active experiments (v2 schema: active_experiments list)
+    # Also check v1 field (current_experiment) for backward compat
+    active_list = data.get("active_experiments", [])
+    v1_current = data.get("current_experiment")
+    if v1_current and v1_current.get("status") == "RUNNING":
+        active_list = active_list + [v1_current]
+
+    for current in active_list:
+        if current.get("status") != "RUNNING":
+            continue
         param = current.get("parameter", "unknown")
         correlations[param].append({
             "value": current.get("original_value"),
-            "period_sharpe": current.get("baseline_sharpe", 0.0),
+            "period_sharpe": current.get("baseline_score", current.get("baseline_sharpe", 0.0)),
             "trades": 0,
             "status": "baseline",
         })
@@ -499,19 +527,19 @@ def build_param_correlations():
             "status": "testing",
         })
 
-    # Completed experiments
+    # Completed experiments (support both v1 and v2 field names)
     for exp in data.get("completed_experiments", []):
         param = exp.get("parameter", "unknown")
         correlations[param].append({
             "value": exp.get("original_value"),
-            "period_sharpe": exp.get("baseline_sharpe", 0.0),
+            "period_sharpe": exp.get("baseline_score", exp.get("baseline_sharpe", 0.0)),
             "trades": exp.get("baseline_trades", 0),
             "status": "completed_baseline",
         })
         correlations[param].append({
             "value": exp.get("test_value"),
-            "period_sharpe": exp.get("test_sharpe", 0.0),
-            "trades": exp.get("test_trades", 0),
+            "period_sharpe": exp.get("result_score", exp.get("test_sharpe", 0.0)),
+            "trades": exp.get("eval_details", {}).get("trade_count", exp.get("test_trades", 0)),
             "status": "completed_test",
         })
 
