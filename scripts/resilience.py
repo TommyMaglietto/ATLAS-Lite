@@ -78,35 +78,40 @@ def retry_api(max_retries=3, base_delay=1.0, max_delay=30.0, retryable_exception
 def configure_client_timeouts(client, connect=10.0, read=30.0, write=10.0, pool=10.0):
     """Set socket timeouts on Alpaca SDK clients.
 
-    Tries to find the underlying httpx client and apply a Timeout object.
-    Silently warns if it fails (different SDK versions may have different
-    internals).
-
-    Args:
-        client: An Alpaca TradingClient or DataClient instance.
-        connect: Connection timeout in seconds (default 10.0).
-        read: Read timeout in seconds (default 30.0).
-        write: Write timeout in seconds (default 10.0).
-        pool: Connection pool timeout in seconds (default 10.0).
+    Supports both requests.Session (alpaca-py) and httpx clients.
+    For requests.Session, patches the send method with a default timeout.
     """
+    import requests as _req
+
     try:
-        import httpx
-        timeout = httpx.Timeout(connect=connect, read=read, write=write, pool=pool)
+        session = getattr(client, "_session", None)
 
-        # Try common internal attribute names across SDK versions
-        for attr_name in ("_session", "_http_client", "_client"):
-            http_client = getattr(client, attr_name, None)
-            if http_client is not None and hasattr(http_client, "timeout"):
-                http_client.timeout = timeout
-                return
+        # Alpaca SDK uses requests.Session
+        if session is not None and isinstance(session, _req.Session):
+            timeout_val = (connect, read)  # requests uses (connect, read) tuple
 
-        print(
-            f"  WARNING: configure_client_timeouts -- "
-            f"could not find httpx client on {type(client).__name__}; "
-            f"timeouts not applied"
-        )
-    except ImportError:
-        print("  WARNING: configure_client_timeouts -- httpx not installed; timeouts not applied")
+            # Monkey-patch the session's send to always include timeout
+            original_send = session.send
+
+            def _send_with_timeout(prepared_request, **kwargs):
+                kwargs.setdefault("timeout", timeout_val)
+                return original_send(prepared_request, **kwargs)
+
+            session.send = _send_with_timeout
+            return
+
+        # Fallback: try httpx approach for newer SDK versions
+        try:
+            import httpx
+            timeout = httpx.Timeout(connect=connect, read=read, write=write, pool=pool)
+            for attr_name in ("_session", "_http_client", "_client"):
+                http_client = getattr(client, attr_name, None)
+                if http_client is not None and hasattr(http_client, "timeout"):
+                    http_client.timeout = timeout
+                    return
+        except ImportError:
+            pass
+
     except Exception as e:
         print(f"  WARNING: configure_client_timeouts failed: {e}")
 
