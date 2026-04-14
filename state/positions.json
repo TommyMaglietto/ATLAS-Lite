@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "last_reconciled": "2026-04-14T22:15:12.738005+00:00",
+  "last_reconciled": "2026-04-14T22:30:12.379942+00:00",
   "positions": [
     {
       "symbol": "AMZN",
@@ -8,11 +8,11 @@
       "strategy": "TRAILING_STOP",
       "qty": 52.0,
       "entry_price": 237.539344,
-      "current_price": 248.62,
-      "market_value": 12928.24,
+      "current_price": 248.69,
+      "market_value": 12931.88,
       "cost_basis": 12352.045888,
-      "unrealized_pnl": 576.194112,
-      "opened_at": "2026-04-14T22:15:12.737980+00:00"
+      "unrealized_pnl": 579.834112,
+      "opened_at": "2026-04-14T22:30:12.379913+00:00"
     },
     {
       "symbol": "GOOGL",
@@ -20,11 +20,11 @@
       "strategy": "TRAILING_STOP",
       "qty": 15.0,
       "entry_price": 316.377333,
-      "current_price": 332.77,
-      "market_value": 4991.55,
+      "current_price": 332.61,
+      "market_value": 4989.15,
       "cost_basis": 4745.659995,
-      "unrealized_pnl": 245.890005,
-      "opened_at": "2026-04-14T22:15:12.737992+00:00"
+      "unrealized_pnl": 243.490005,
+      "opened_at": "2026-04-14T22:30:12.379928+00:00"
     },
     {
       "symbol": "NVDA",
@@ -32,11 +32,11 @@
       "strategy": "TRAILING_STOP",
       "qty": 45.0,
       "entry_price": 185.874717,
-      "current_price": 196.02,
-      "market_value": 8820.9,
+      "current_price": 195.8443,
+      "market_value": 8812.9935,
       "cost_basis": 8364.362265,
-      "unrealized_pnl": 456.537735,
-      "opened_at": "2026-04-14T22:15:12.737998+00:00"
+      "unrealized_pnl": 448.631235,
+      "opened_at": "2026-04-14T22:30:12.379934+00:00"
     }
   ],
   "pending_orders": [
@@ -80,7 +80,7 @@
   "totals": {
     "total_positions": 3,
     "total_pending": 3,
-    "total_value": 56408.58,
+    "total_value": 56401.91,
     "cash_available": 77144.95,
     "cash_reserved_pct": 74.3,
     "deployed_pct": 25.7

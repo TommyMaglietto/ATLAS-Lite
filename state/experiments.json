@@ -1,9 +1,62 @@
 {
   "schema_version": "2.0.0",
-  "active_experiments": [],
-  "engine_status": "IDLE",
-  "engine_status_reason": "No active experiments",
-  "engine_status_updated": "2026-04-14T10:25:42.118646+00:00",
+  "active_experiments": [
+    {
+      "id": "exp_20260414_553",
+      "strategy": "TRAILING_STOP",
+      "parameter": "full_close_after_tiers",
+      "config_section": "trailing_stop",
+      "original_value": 3,
+      "test_value": 2,
+      "bounds": [
+        2,
+        5
+      ],
+      "baseline_score": 7.8581,
+      "baseline_method": "PROFIT_FACTOR",
+      "baseline_details": {
+        "profit_factor": 7.858,
+        "gross_profit": 2698.94,
+        "gross_loss": 343.46,
+        "win_rate": 0.528,
+        "trade_count": 36
+      },
+      "mutation_direction": "decrease",
+      "direction_bias": 0.0,
+      "trades_at_start": 25,
+      "status": "RUNNING",
+      "started_at": "2026-04-14T22:00:03.114638+00:00"
+    },
+    {
+      "id": "exp_20260414_281",
+      "strategy": "ema_crossover_bullish",
+      "signal_key": "ema_crossover_bullish",
+      "parameter": "ema_fast",
+      "config_section": "crypto.ema_crossover_bullish",
+      "original_value": 9,
+      "test_value": 8,
+      "bounds": [
+        5,
+        15
+      ],
+      "baseline_score": -0.05,
+      "baseline_method": "WIN_RATE",
+      "baseline_details": {
+        "win_rate": 0.0,
+        "avg_pnl": -20.11,
+        "pnl_bonus": -0.05,
+        "trade_count": 4
+      },
+      "mutation_direction": "decrease",
+      "direction_bias": 0.0,
+      "trades_at_start": 4,
+      "status": "RUNNING",
+      "started_at": "2026-04-14T22:17:59.743922+00:00"
+    }
+  ],
+  "engine_status": "RUNNING_EXPERIMENTS",
+  "engine_status_reason": "2 active: TRAILING_STOP.full_close_after_tiers=2, ema_crossover_bullish.ema_fast=8",
+  "engine_status_updated": "2026-04-14T22:32:14.363349+00:00",
   "completed_experiments": [
     {
       "id": "exp_20260413_715",
@@ -58,7 +111,7 @@
     }
   ],
   "statistics": {
-    "total_experiments": 2,
+    "total_experiments": 4,
     "accepted": 0,
     "rejected": 2,
     "acceptance_rate": 0.0

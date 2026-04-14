@@ -1,18 +1,39 @@
 {
-  "last_updated": "2026-04-14T10:25:42.125020+00:00",
+  "last_updated": "2026-04-14T22:32:14.403305+00:00",
   "filters": {
     "vwap_trend": {
-      "blocked": 114,
+      "blocked": 313,
       "would_have_won": 0,
       "would_have_lost": 0,
-      "neutral": 15,
+      "neutral": 158,
       "accuracy": null
     },
     "vwap_slope_chop": {
-      "blocked": 85,
+      "blocked": 141,
+      "would_have_won": 0,
+      "would_have_lost": 0,
+      "neutral": 64,
+      "accuracy": null
+    },
+    "spread_too_wide": {
+      "blocked": 33,
       "would_have_won": 0,
       "would_have_lost": 0,
       "neutral": 0,
+      "accuracy": null
+    },
+    "adr_exhaustion": {
+      "blocked": 289,
+      "would_have_won": 0,
+      "would_have_lost": 0,
+      "neutral": 0,
+      "accuracy": null
+    },
+    "ml_low_confidence": {
+      "blocked": 24,
+      "would_have_won": 0,
+      "would_have_lost": 0,
+      "neutral": 1,
       "accuracy": null
     }
   }
