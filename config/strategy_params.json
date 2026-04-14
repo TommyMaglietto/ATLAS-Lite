@@ -3,7 +3,7 @@
   "last_updated": "2026-04-13T18:29:10.777480+00:00",
   "trailing_stop": {
     "enabled": true,
-    "loss_pct": 5.4642,
+    "loss_pct": 5.0,
     "loss_pct_bounds": [
       3.0,
       15.0
@@ -61,7 +61,10 @@
       0.1,
       2.0
     ],
-    "learning_mode": true
+    "learning_mode": true,
+    "server_side_stops": true,
+    "tf_4h_discount_factor": 0.5,
+    "tf_4h_discount_factor_bounds": [0.25, 1.0]
   },
   "wheel": {
     "enabled": true,

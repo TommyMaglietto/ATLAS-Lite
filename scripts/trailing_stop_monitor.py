@@ -48,7 +48,7 @@ SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 PAPER = True  # NEVER change this
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.requests import MarketOrderRequest, StopOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
 from alpaca.data.requests import CryptoLatestQuoteRequest, StockLatestQuoteRequest, CryptoBarsRequest
@@ -450,6 +450,64 @@ def has_alpaca_position(symbol: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Server-side stop orders (Fix 6)
+# ---------------------------------------------------------------------------
+def place_or_update_server_stop(stop, trading_client):
+    """Place or update a server-side stop order on Alpaca.
+    Returns the new order ID, or None on failure."""
+    symbol = stop.get("symbol", "")
+    qty = float(stop.get("qty", 0))
+    floor_price = float(stop.get("floor_price", 0))
+
+    if qty <= 0 or floor_price <= 0:
+        return None
+
+    # Cancel existing server-side stop if present
+    old_order_id = stop.get("trailing_stop_order_id")
+    if old_order_id:
+        try:
+            trading_client.cancel_order_by_id(old_order_id)
+        except Exception:
+            pass  # Order may already be filled/cancelled
+
+    # Place new stop order
+    try:
+        is_crypto_sym = "/" in symbol
+        tif = TimeInForce.GTC
+
+        # Alpaca needs flat symbol for crypto orders (BTCUSD not BTC/USD)
+        order_symbol = to_alpaca_position_symbol(symbol) if is_crypto_sym else symbol
+
+        # Round stop price: 2 decimals for equities, 6 for crypto
+        rounded_stop = round(floor_price, 6) if is_crypto_sym else round(floor_price, 2)
+
+        order_req = StopOrderRequest(
+            symbol=order_symbol,
+            qty=qty,
+            side=OrderSide.SELL,
+            stop_price=rounded_stop,
+            time_in_force=tif,
+        )
+        order = trading_client.submit_order(order_req)
+        return str(order.id)
+    except Exception as e:
+        if not QUIET:
+            print(f"  WARNING: Could not place server stop for {symbol}: {e}")
+        return None
+
+
+def cancel_server_stop(stop, trading_client):
+    """Cancel the server-side stop order for a stop entry. Clears the order ID."""
+    server_order = stop.get("trailing_stop_order_id")
+    if server_order:
+        try:
+            trading_client.cancel_order_by_id(server_order)
+        except Exception:
+            pass  # Order may already be filled/cancelled
+        stop["trailing_stop_order_id"] = None
+
+
+# ---------------------------------------------------------------------------
 # Trade logging
 # ---------------------------------------------------------------------------
 def log_trade(record: dict) -> None:
@@ -715,6 +773,8 @@ def check_drawdown_and_emergency(active_stops: list, closed_stops: list) -> tupl
             entry_price = float(stop["entry_price"])
 
             print(f"  EMERGENCY SELL: {symbol} (unrealized PnL: ${unrealized_pnl:+,.2f})")
+            # Cancel server-side stop to prevent double-sell
+            cancel_server_stop(stop, trading_client)
             order = execute_sell(stop)
             if order is None:
                 print(f"  ERROR: Emergency sell failed for {symbol} — will retry next run")
@@ -827,6 +887,62 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
         floor_price = float(stop["floor_price"])
         timeframe = stop.get("timeframe", "1H")
 
+        # --- Server-side stop: check if it filled between polls ---
+        if STRATEGY_PARAMS.get("server_side_stops", False):
+            server_order = stop.get("trailing_stop_order_id")
+            if server_order:
+                try:
+                    srv_order = trading_client.get_order_by_id(server_order)
+                    if str(srv_order.status) in ("filled", "partially_filled"):
+                        if not QUIET:
+                            print(f"  {symbol}: Server stop FILLED (order {server_order[:8]}...)")
+                        # Mark stop as closed -- the server handled it
+                        fill_price = float(srv_order.filled_avg_price) if srv_order.filled_avg_price else current_price
+                        fill_qty = float(srv_order.filled_qty) if srv_order.filled_qty else float(stop["qty"])
+                        srv_pnl = round((fill_price - float(stop["entry_price"])) * fill_qty, 2)
+                        srv_pnl_pct = round(((fill_price - float(stop["entry_price"])) / float(stop["entry_price"])) * 100, 2) if float(stop["entry_price"]) else 0
+                        log_trade({
+                            "timestamp": now_iso,
+                            "strategy": "TRAILING_STOP",
+                            "action": "SELL",
+                            "symbol": symbol,
+                            "asset_class": stop.get("asset_class", "equity"),
+                            "qty": fill_qty,
+                            "price": fill_price,
+                            "order_type": "stop",
+                            "order_id": server_order,
+                            "status": "filled",
+                            "entry_price": float(stop["entry_price"]),
+                            "pnl": srv_pnl,
+                            "pnl_pct": srv_pnl_pct,
+                            "signal_type": "server_stop_filled",
+                            "exit_reason": "server_stop_filled",
+                            "exit_type": "server_side_stop",
+                            "timeframe": timeframe,
+                        })
+                        closed_record = deepcopy(stop)
+                        closed_record["status"] = "STOPPED_OUT_SERVER"
+                        closed_record["closed_at"] = now_iso
+                        closed_record["sell_price"] = fill_price
+                        closed_record["sell_order_id"] = server_order
+                        closed_record["realized_pnl"] = srv_pnl
+                        closed_record["realized_pnl_pct"] = srv_pnl_pct
+                        closed_record["qty"] = 0
+                        closed_stops.append(closed_record)
+                        sells_executed += 1
+                        print(f"  SOLD (SERVER STOP): {symbol} qty={fill_qty} @ ${fill_price:.4f} | PnL=${srv_pnl:+.2f} ({srv_pnl_pct:+.2f}%)")
+                        continue  # Skip all further processing for this stop
+                except Exception:
+                    pass  # Order lookup failed, proceed with normal check
+
+        # --- Server-side stop: place initial stop if not yet placed ---
+        if STRATEGY_PARAMS.get("server_side_stops", False) and not stop.get("trailing_stop_order_id"):
+            order_id = place_or_update_server_stop(stop, trading_client)
+            if order_id:
+                stop["trailing_stop_order_id"] = order_id
+                if not QUIET:
+                    print(f"  {symbol}: Server stop placed at ${floor_price:.4f} (order {order_id[:8]}...)")
+
         # Use timeframe-specific trail_pct and full_close threshold
         if timeframe == "15M":
             trail_pct = PARAMS_15M.get("trail_pct", 2.0)
@@ -853,6 +969,11 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 old_floor = floor_price
                 stop["floor_price"] = new_floor
                 floor_price = new_floor
+                # Update server-side stop order at new floor
+                if STRATEGY_PARAMS.get("server_side_stops", False):
+                    new_order_id = place_or_update_server_stop(stop, trading_client)
+                    if new_order_id:
+                        stop["trailing_stop_order_id"] = new_order_id
                 if not QUIET:
                     print(f"  {symbol}: NEW HIGH ${current_price:.4f} — floor raised ${old_floor:.4f} -> ${new_floor:.4f}")
             else:
@@ -979,6 +1100,8 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 fc_asset_cls = "crypto" if crypto else "equity"
                 fc_qty_ok, fc_min_qty = validate_min_qty(symbol, remaining_qty, asset_class=fc_asset_cls)
                 if fc_qty_ok and remaining_qty > 0:
+                    # Cancel server-side stop to prevent double-sell
+                    cancel_server_stop(stop, trading_client)
                     fc_order = execute_sell(stop)
                     if fc_order is not None:
                         fc_sell_price = current_price
@@ -1136,6 +1259,11 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                             old_floor = floor_price
                             stop["floor_price"] = round(new_floor, 6)
                             floor_price = new_floor
+                            # Update server-side stop order at new decayed floor
+                            if STRATEGY_PARAMS.get("server_side_stops", False):
+                                decay_order_id = place_or_update_server_stop(stop, trading_client)
+                                if decay_order_id:
+                                    stop["trailing_stop_order_id"] = decay_order_id
                             if not QUIET:
                                 print(f"  {symbol}: TIME-DECAY floor raised ${old_floor:.4f} -> ${new_floor:.4f} "
                                       f"(trail {trail_pct:.1f}% -> {effective_trail:.1f}%, stale {days_stale:.1f}d)")
@@ -1180,6 +1308,9 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 # Keep this stop active — it will be processed next run
                 still_active.append(stop)
                 break  # Stop processing remaining stops
+
+            # Cancel server-side stop to prevent double-sell
+            cancel_server_stop(stop, trading_client)
 
             # Minimum quantity validation
             asset_cls = "crypto" if is_crypto(stop) else "equity"

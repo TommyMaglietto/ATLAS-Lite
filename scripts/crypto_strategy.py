@@ -1148,6 +1148,10 @@ def update_trailing_stops(new_trades, params=None):
                 if ema_floor is not None and ema_floor > floor:
                     floor = ema_floor
 
+                # Guard: floor can NEVER be within 1% of entry price
+                # Prevents EMA trail floor from setting floor above entry (AVAX bug)
+                floor = min(floor, price * 0.99)
+
                 # ATR-based dynamic trail: 2 * ATR / price * 100, clamped to [2%, 15%]
                 atr_for_trail = trade.get("indicators", {}).get("atr")
                 if atr_for_trail and price > 0:
@@ -1231,7 +1235,8 @@ def update_ema_trail_floors(all_data, params):
 
             stop["ema_trail_floor"] = ema_floor
 
-            if ema_floor > old_floor:
+            entry_price = stop.get("entry_price", float("inf"))
+            if ema_floor > old_floor and ema_floor < entry_price * 0.99:
                 stop["floor_price"] = ema_floor
                 if not QUIET:
                     print(f"  {symbol}: EMA floor raised ${old_floor:.4f} -> ${ema_floor:.4f} (EMA9=${ema9_val:.4f})")
@@ -1626,8 +1631,9 @@ def main():
     buy_signals = [s for s in all_signals if s["action"] == "BUY"]
     sell_signals = [s for s in all_signals if s["action"] == "SELL"]
 
-    # ---- Multi-timeframe confirmation: 4H trend must agree with 1H/15M buys ----
-    confirmed_buys = []
+    # Multi-timeframe confirmation: 4H trend as position size modifier (not hard gate)
+    # Bearish 4H = reduced position, not blocked (generates learning data)
+    tf_4h_discount = params.get("shared", params).get("tf_4h_discount_factor", 0.5)
     for sig in buy_signals:
         sym = sig["symbol"]
         key_4h = f"{sym}_4H"
@@ -1636,18 +1642,18 @@ def main():
             latest_4h = df_4h.iloc[-1]
             ema9_4h = float(latest_4h.get("ema9", 0))
             ema55_4h = float(latest_4h.get("ema55", 0))
-            # 4H trend aligned bullish: EMA9 > EMA55 on higher timeframe
             if ema9_4h > ema55_4h:
-                confirmed_buys.append(sig)
+                sig["tf_4h_multiplier"] = 1.0
             else:
+                sig["tf_4h_multiplier"] = tf_4h_discount
                 if not QUIET:
-                    print(f"  4H FILTER: {sym} {sig.get('signal_type','')} blocked -- 4H EMA9 < EMA55 (bearish higher TF)")
+                    print(f"  4H DISCOUNT: {sym} {sig.get('signal_type','')} -- 4H bearish, {tf_4h_discount:.0%} size")
         else:
-            confirmed_buys.append(sig)  # No 4H data = pass through
-    buy_signals = confirmed_buys
+            sig["tf_4h_multiplier"] = 1.0
 
     if not QUIET:
-        print(f"\n  TOTAL: {len(buy_signals)} BUY signals (after 4H filter), {len(sell_signals)} SELL signals")
+        n_discounted = sum(1 for s in buy_signals if s.get("tf_4h_multiplier", 1.0) < 1.0)
+        print(f"\n  TOTAL: {len(buy_signals)} BUY signals ({n_discounted} 4H-discounted), {len(sell_signals)} SELL signals")
 
     # ---- Execute trades ----
     if not QUIET:
@@ -1785,7 +1791,8 @@ def main():
         weight = signal_weights.get(signal.get("signal_type", ""), 1.0)
         ml_conf = signal.get("ml_confidence", 0.5)
         confidence_mult = 0.5 + ml_conf  # [0.5, 1.5] range based on ML confidence
-        trade_size = min(effective_size_for_signal * probation_multiplier * weight * confidence_mult, remaining)
+        tf_4h_mult = signal.get("tf_4h_multiplier", 1.0)
+        trade_size = min(effective_size_for_signal * probation_multiplier * weight * confidence_mult * tf_4h_mult, remaining)
         if probation_multiplier < 1.0 and not QUIET:
             print(f"  PROBATION: {symbol} — signal '{signal['signal_type']}' using 50% size (${trade_size:,.2f})")
         print(f"\n  >>> Executing BUY: {symbol} (${trade_size:,.2f})")
