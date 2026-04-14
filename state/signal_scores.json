@@ -1,37 +1,39 @@
 {
-  "last_updated": "2026-04-13T12:47:40.210592+00:00",
+  "last_updated": "2026-04-14T10:25:44.018819+00:00",
   "signal_scoreboard": {
     "borderline_dca": {
       "total_trades": 8,
-      "closed_trades": 0,
-      "open_trades": 8,
-      "wins": 0,
+      "closed_trades": 1,
+      "open_trades": 7,
+      "wins": 1,
       "losses": 0,
-      "win_rate": 0.0,
-      "avg_pnl": 0.0,
-      "avg_pnl_pct": 0.0,
-      "total_pnl": 0,
-      "avg_hold_hours": 0.0,
-      "best_trade_pnl": 0.0,
-      "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -159.94,
-      "grade": "INSUFFICIENT_DATA"
+      "win_rate": 1.0,
+      "avg_pnl": 38.04,
+      "avg_pnl_pct": 1.5515,
+      "total_pnl": 38.04,
+      "avg_hold_hours": 35.9,
+      "best_trade_pnl": 38.04,
+      "worst_trade_pnl": 38.04,
+      "open_unrealized_pnl": 849.52,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     },
     "borderline_trend": {
       "total_trades": 3,
-      "closed_trades": 0,
-      "open_trades": 3,
-      "wins": 0,
+      "closed_trades": 1,
+      "open_trades": 2,
+      "wins": 1,
       "losses": 0,
-      "win_rate": 0.0,
-      "avg_pnl": 0.0,
-      "avg_pnl_pct": 0.0,
-      "total_pnl": 0,
-      "avg_hold_hours": 0.0,
-      "best_trade_pnl": 0.0,
-      "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -58.21,
-      "grade": "INSUFFICIENT_DATA"
+      "win_rate": 1.0,
+      "avg_pnl": 75.59,
+      "avg_pnl_pct": 3.0841,
+      "total_pnl": 75.59,
+      "avg_hold_hours": 35.4,
+      "best_trade_pnl": 75.59,
+      "worst_trade_pnl": 75.59,
+      "open_unrealized_pnl": 225.63,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     },
     "dca_technical_trigger": {
       "total_trades": 9,
@@ -46,8 +48,9 @@
       "avg_hold_hours": 0.0,
       "best_trade_pnl": 0.0,
       "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -212.2,
-      "grade": "INSUFFICIENT_DATA"
+      "open_unrealized_pnl": 868.62,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     },
     "portfolio_rebalance": {
       "total_trades": 3,
@@ -62,8 +65,9 @@
       "avg_hold_hours": 0.0,
       "best_trade_pnl": 0.0,
       "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -109.48,
-      "grade": "INSUFFICIENT_DATA"
+      "open_unrealized_pnl": 439.08,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     },
     "unknown": {
       "total_trades": 5,
@@ -78,26 +82,28 @@
       "avg_hold_hours": 0.0,
       "best_trade_pnl": 0.0,
       "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -122.73,
-      "grade": "INSUFFICIENT_DATA"
+      "open_unrealized_pnl": 827.37,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     }
   },
   "strategy_scoreboard": {
     "CRYPTO_DCA": {
       "total_trades": 17,
-      "closed_trades": 0,
-      "open_trades": 17,
-      "wins": 0,
+      "closed_trades": 1,
+      "open_trades": 16,
+      "wins": 1,
       "losses": 0,
-      "win_rate": 0.0,
-      "avg_pnl": 0.0,
-      "avg_pnl_pct": 0.0,
-      "total_pnl": 0,
-      "avg_hold_hours": 0.0,
-      "best_trade_pnl": 0.0,
-      "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -372.14,
-      "grade": "INSUFFICIENT_DATA"
+      "win_rate": 1.0,
+      "avg_pnl": 38.04,
+      "avg_pnl_pct": 1.5515,
+      "total_pnl": 38.04,
+      "avg_hold_hours": 35.9,
+      "best_trade_pnl": 38.04,
+      "worst_trade_pnl": 38.04,
+      "open_unrealized_pnl": 1718.14,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     },
     "CRYPTO_REBALANCE": {
       "total_trades": 3,
@@ -112,24 +118,26 @@
       "avg_hold_hours": 0.0,
       "best_trade_pnl": 0.0,
       "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -109.48,
-      "grade": "INSUFFICIENT_DATA"
+      "open_unrealized_pnl": 439.08,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     },
     "CRYPTO_TREND": {
       "total_trades": 3,
-      "closed_trades": 0,
-      "open_trades": 3,
-      "wins": 0,
+      "closed_trades": 1,
+      "open_trades": 2,
+      "wins": 1,
       "losses": 0,
-      "win_rate": 0.0,
-      "avg_pnl": 0.0,
-      "avg_pnl_pct": 0.0,
-      "total_pnl": 0,
-      "avg_hold_hours": 0.0,
-      "best_trade_pnl": 0.0,
-      "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -58.21,
-      "grade": "INSUFFICIENT_DATA"
+      "win_rate": 1.0,
+      "avg_pnl": 75.59,
+      "avg_pnl_pct": 3.0841,
+      "total_pnl": 75.59,
+      "avg_hold_hours": 35.4,
+      "best_trade_pnl": 75.59,
+      "worst_trade_pnl": 75.59,
+      "open_unrealized_pnl": 225.63,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     },
     "TRAILING_STOP": {
       "total_trades": 5,
@@ -144,36 +152,51 @@
       "avg_hold_hours": 0.0,
       "best_trade_pnl": 0.0,
       "worst_trade_pnl": 0.0,
-      "open_unrealized_pnl": -122.73,
-      "grade": "INSUFFICIENT_DATA"
+      "open_unrealized_pnl": 827.37,
+      "grade": "INSUFFICIENT_DATA",
+      "recommended_weight": 1.0
     }
   },
   "param_correlations": {
+    "rsi_oversold": [
+      {
+        "value": 35,
+        "period_sharpe": 0.0,
+        "trades": 0,
+        "status": "completed_baseline"
+      },
+      {
+        "value": 38,
+        "period_sharpe": 0.0,
+        "trades": 0,
+        "status": "completed_test"
+      }
+    ],
     "loss_pct": [
       {
         "value": 5.0,
         "period_sharpe": 0.0,
         "trades": 0,
-        "status": "baseline"
+        "status": "completed_baseline"
       },
       {
         "value": 5.4642,
-        "period_sharpe": null,
+        "period_sharpe": 0.0,
         "trades": 0,
-        "status": "testing"
+        "status": "completed_test"
       }
     ]
   },
   "recommendations": [
-    "MONITOR 'borderline_dca' -- only 0 closed trades, need 3+ for grading",
-    "MONITOR 'borderline_trend' -- only 0 closed trades, need 3+ for grading",
+    "MONITOR 'borderline_dca' -- only 1 closed trades, need 3+ for grading",
+    "MONITOR 'borderline_trend' -- only 1 closed trades, need 3+ for grading",
     "MONITOR 'dca_technical_trigger' -- only 0 closed trades, need 3+ for grading",
     "MONITOR 'portfolio_rebalance' -- only 0 closed trades, need 3+ for grading",
     "MONITOR 'unknown' -- only 0 closed trades, need 3+ for grading"
   ],
   "round_trips_summary": {
     "total": 28,
-    "closed": 0,
-    "open": 28
+    "closed": 2,
+    "open": 26
   }
 }

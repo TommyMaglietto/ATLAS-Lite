@@ -2,3 +2,205 @@
 [QUIET] 9 positions checked, 0 actions taken
 [QUIET] 9 positions checked, 0 actions taken
 [QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: LINK/USD qty=79.41094231 order_id=ef908d33-f729-46cf-b8a1-b4fed3b31d41
+  PROFIT TAKE: LINK/USD +5.6% — selling 10% (79.41094231 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      1
+  Ladder buys:       0
+  Active stops:      9
+  Pending fills:     0
+  Total closed:      0
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: AVAX/USD qty=76.42376855 order_id=9e3c4b56-a70c-4787-9418-d1aa865173f3
+  PROFIT TAKE: AVAX/USD +5.2% — selling 10% (76.42376855 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      1
+  Ladder buys:       0
+  Active stops:      9
+  Pending fills:     0
+  Total closed:      0
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: ETH/USD qty=1.13241601 order_id=230fc653-d2e2-4a6c-836a-866ec953ed08
+  PROFIT TAKE: ETH/USD +5.1% — selling 10% (1.13241601 units)
+  PARTIAL SELL ORDER PLACED: SOL/USD qty=9.66589721 order_id=6e04d5fa-7589-4ae4-84d8-23492862ce8f
+  PROFIT TAKE: SOL/USD +5.1% — selling 10% (9.66589721 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      2
+  Ladder buys:       0
+  Active stops:      9
+  Pending fills:     0
+  Total closed:      0
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: ETH/USD qty=0.81533953 order_id=33cc9f05-6bf8-4c0b-87a5-e1157e60949f
+  PROFIT TAKE: ETH/USD +4.4% — selling 8% (0.81533953 units)
+  PARTIAL SELL ORDER PLACED: AVAX/USD qty=55.02511335 order_id=ddc98303-1ce8-4472-8ca5-921472da2313
+  PROFIT TAKE: AVAX/USD +3.9% — selling 8% (55.02511335 units)
+  PARTIAL SELL ORDER PLACED: LINK/USD qty=57.17587846 order_id=be4d739f-5e0e-4cee-b432-3102e5cbfe97
+  PROFIT TAKE: LINK/USD +4.6% — selling 8% (57.17587846 units)
+  PARTIAL SELL ORDER PLACED: SOL/USD qty=6.95944599 order_id=6678915e-d0c9-43fd-b989-018347ae48ee
+  PROFIT TAKE: SOL/USD +4.4% — selling 8% (6.95944599 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      4
+  Ladder buys:       0
+  Active stops:      9
+  Pending fills:     0
+  Total closed:      0
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 9 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** AVAX/USD: $9.4197 <= $9.4367
+  SELL ORDER PLACED: AVAX/USD qty=632.788803583 order_id=1c448f7c-6522-40de-81e0-7a86081e1a14
+  SOLD: AVAX/USD qty=632.788803583 @ ~$9.4197 | PnL=$+170.16 (+3.04%)
+
+======================================================================
+SUMMARY
+  Sells executed:    1
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      8
+  Pending fills:     0
+  Total closed:      1
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 8 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** DOGE/USD: $0.0928 <= $0.0929
+  SELL ORDER PLACED: DOGE/USD qty=76516.771385281 order_id=efd7d413-892c-448b-a57a-d4087fb18173
+  SOLD: DOGE/USD qty=76516.771385281 @ ~$0.0928 | PnL=$+92.09 (+1.52%)
+
+======================================================================
+SUMMARY
+  Sells executed:    1
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      7
+  Pending fills:     0
+  Total closed:      2
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken

@@ -1,29 +1,66 @@
 {
-  "schema_version": "1.0.0",
-  "current_experiment": {
-    "id": "exp_20260412_645",
-    "strategy": "TRAILING_STOP",
-    "parameter": "loss_pct",
-    "config_section": "trailing_stop",
-    "original_value": 5.0,
-    "test_value": 5.4642,
-    "bounds": [
-      3.0,
-      15.0
-    ],
-    "baseline_sharpe": 0.0,
-    "status": "RUNNING",
-    "started_at": "2026-04-12T21:37:29.398709+00:00",
-    "eval_until": "2026-04-17T21:37:29.398709+00:00"
-  },
-  "engine_status": "RUNNING_EXPERIMENT",
-  "engine_status_reason": "Testing loss_pct=5.4642 (was 5.0)",
-  "engine_status_updated": "2026-04-12T21:37:29.400462+00:00",
-  "completed_experiments": [],
+  "schema_version": "2.0.0",
+  "active_experiments": [],
+  "engine_status": "IDLE",
+  "engine_status_reason": "No active experiments",
+  "engine_status_updated": "2026-04-14T10:25:42.118646+00:00",
+  "completed_experiments": [
+    {
+      "id": "exp_20260413_715",
+      "strategy": "CRYPTO_TREND",
+      "parameter": "rsi_oversold",
+      "config_section": "crypto_strategy",
+      "original_value": 35,
+      "test_value": 38,
+      "bounds": [
+        25,
+        40
+      ],
+      "baseline_score": 0.0,
+      "baseline_method": "INSUFFICIENT",
+      "baseline_details": {
+        "trade_count": 3
+      },
+      "mutation_direction": "increase",
+      "direction_bias": 0.0,
+      "trades_at_start": 0,
+      "status": "REJECTED",
+      "started_at": "2026-04-13T18:29:10.777476+00:00",
+      "completed_at": "2026-04-14T01:24:16.541181+00:00",
+      "eval_details": {
+        "reason": "v1_schema_incompatible_with_v2_migration"
+      },
+      "score_improvement": 0
+    },
+    {
+      "id": "exp_20260412_645",
+      "strategy": "TRAILING_STOP",
+      "parameter": "loss_pct",
+      "config_section": "trailing_stop",
+      "original_value": 5.0,
+      "test_value": 5.4642,
+      "bounds": [
+        3.0,
+        15.0
+      ],
+      "baseline_sharpe": 0.0,
+      "status": "REJECTED",
+      "started_at": "2026-04-12T21:37:29.398709+00:00",
+      "eval_until": "2026-04-17T21:37:29.398709+00:00",
+      "trades_at_start": 0,
+      "baseline_score": 0.0,
+      "baseline_method": "SHARPE",
+      "completed_at": "2026-04-14T02:32:29.907611+00:00",
+      "eval_details": {
+        "reason": "force_rejected_before_v4_trail_change"
+      },
+      "score_improvement": 0
+    }
+  ],
   "statistics": {
-    "total_experiments": 1,
+    "total_experiments": 2,
     "accepted": 0,
-    "rejected": 0,
-    "acceptance_rate": 0
+    "rejected": 2,
+    "acceptance_rate": 0.0
   }
 }

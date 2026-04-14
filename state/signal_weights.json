@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "last_updated": "2026-04-14T10:25:44.133214+00:00",
+  "weights": {
+    "mean_reversion_oversold": {
+      "weight": 1.0,
+      "auto_tuned": true,
+      "last_tuned": null
+    },
+    "ema_crossover_bullish": {
+      "weight": 1.0,
+      "auto_tuned": true,
+      "last_tuned": null
+    },
+    "dca_technical_trigger": {
+      "weight": 1.0,
+      "auto_tuned": true,
+      "last_tuned": null
+    },
+    "overbought_exit": {
+      "weight": 1.0,
+      "auto_tuned": false,
+      "last_tuned": null
+    },
+    "volume_engulfing_bullish": {
+      "weight": 1.0,
+      "auto_tuned": true,
+      "last_tuned": null
+    },
+    "body_momentum_bullish": {
+      "weight": 1.0,
+      "auto_tuned": true,
+      "last_tuned": null
+    },
+    "borderline_dca": {
+      "weight": 0.75,
+      "auto_tuned": true,
+      "last_tuned": "2026-04-14T10:25:44.133077+00:00"
+    },
+    "borderline_trend": {
+      "weight": 0.75,
+      "auto_tuned": true,
+      "last_tuned": "2026-04-14T10:25:44.133159+00:00"
+    },
+    "bb_accumulation": {
+      "weight": 0.5,
+      "auto_tuned": true,
+      "last_tuned": null
+    }
+  }
+}

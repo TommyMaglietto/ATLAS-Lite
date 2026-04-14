@@ -1,0 +1,13 @@
+{
+    "schema_version": "1.0.0",
+    "last_updated": null,
+    "default_slippage_pct": 0.10,
+    "assets": {
+        "BTC/USD": {"ema_slippage_pct": 0.03, "samples": 0, "last_updated": null},
+        "ETH/USD": {"ema_slippage_pct": 0.05, "samples": 0, "last_updated": null},
+        "SOL/USD": {"ema_slippage_pct": 0.08, "samples": 0, "last_updated": null},
+        "DOGE/USD": {"ema_slippage_pct": 0.20, "samples": 0, "last_updated": null},
+        "AVAX/USD": {"ema_slippage_pct": 0.10, "samples": 0, "last_updated": null},
+        "LINK/USD": {"ema_slippage_pct": 0.10, "samples": 0, "last_updated": null}
+    }
+}

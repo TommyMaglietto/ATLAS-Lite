@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
   "last_updated": "2026-04-13T18:29:10.777480+00:00",
   "trailing_stop": {
     "enabled": true,
@@ -8,7 +8,7 @@
       3.0,
       15.0
     ],
-    "trail_pct": 5.0,
+    "trail_pct": 2.5,
     "trail_pct_bounds": [
       2.0,
       10.0
@@ -31,6 +31,10 @@
     "profit_taking_enabled": true,
     "profit_tiers": [
       {
+        "gain_pct": 3,
+        "sell_pct": 8
+      },
+      {
         "gain_pct": 5,
         "sell_pct": 10
       },
@@ -46,7 +50,12 @@
         "gain_pct": 35,
         "sell_pct": 25
       }
-    ]
+    ],
+    "full_close_after_tiers": 3,
+    "full_close_after_tiers_bounds": [2, 5],
+    "trail_decay_per_day": 0.5,
+    "trail_decay_per_day_bounds": [0.1, 2.0],
+    "learning_mode": true
   },
   "wheel": {
     "enabled": true,
@@ -89,7 +98,15 @@
     "cooldown_hours_per_slot": 12,
     "walk_forward_train_days": 60,
     "walk_forward_test_days": 20,
-    "schedule": "Every 3 days"
+    "schedule": "Twice daily (6 AM and 6 PM)",
+    "backtest_enabled": true,
+    "backtest_train_days": 60,
+    "backtest_test_days": 20,
+    "backtest_grid_points": 5,
+    "backtest_max_combos": 50,
+    "backtest_live_confirm_days": 2,
+    "backtest_degradation_threshold_pct": 20,
+    "backtest_out_of_sample_symbols": ["NEAR/USD", "ATOM/USD", "FTM/USD", "OP/USD"]
   },
   "regime_filter": {
     "enabled": true,
@@ -124,59 +141,173 @@
       "SOL/USD",
       "DOGE/USD",
       "AVAX/USD",
-      "LINK/USD"
+      "LINK/USD",
+      "ADA/USD",
+      "XRP/USD",
+      "DOT/USD",
+      "MATIC/USD",
+      "SHIB/USD",
+      "UNI/USD"
     ],
-    "position_size_usd": 4000,
-    "position_size_bounds": [
-      1000,
-      5000
-    ],
-    "bb_period": 20,
-    "bb_std": 2.0,
-    "bb_std_bounds": [
-      1.5,
-      3.0
-    ],
-    "rsi_period": 14,
-    "rsi_oversold": 38,
-    "rsi_oversold_bounds": [
-      25,
-      40
-    ],
-    "rsi_overbought": 70,
-    "rsi_overbought_bounds": [
-      65,
-      80
-    ],
-    "ema_fast": 9,
-    "ema_fast_bounds": [
-      5,
-      15
-    ],
-    "ema_med": 21,
-    "ema_med_bounds": [
-      15,
-      30
-    ],
-    "ema_long": 55,
-    "ema_long_bounds": [
-      40,
-      80
-    ],
-    "atr_period": 14,
-    "dca_rsi_threshold": 42,
-    "dca_rsi_threshold_bounds": [
-      30,
-      50
-    ],
-    "dca_aggressive_rsi": 20,
-    "stop_atr_multiplier": 2.0,
-    "strategies": [
-      "CRYPTO_MEAN_REVERSION",
-      "CRYPTO_TREND",
-      "CRYPTO_DCA"
-    ],
-    "schedule": "Every 2 hours, 24/7"
+    "position_size_usd": 2500,
+    "position_size_bounds": [1000, 5000],
+    "schedule": "Every 2 hours, 24/7",
+    "strategies": ["CRYPTO_MEAN_REVERSION", "CRYPTO_TREND", "CRYPTO_DCA"],
+
+    "shared": {
+      "bb_period": 20,
+      "bb_std": 2.0,
+      "rsi_period": 14,
+      "atr_period": 14,
+      "adx_period": 14,
+      "adx_ranging_threshold": 25,
+      "adx_trending_threshold": 25,
+      "ema_fast": 9,
+      "ema_med": 21,
+      "ema_long": 55,
+      "vwap_period": 24,
+      "vwap_slope_period": 5,
+      "body_momentum_period": 5,
+      "vwap_filter_enabled": true,
+      "adr_filter_enabled": true,
+      "ema_trail_enabled": true,
+      "adr_lookback_days": 10,
+      "adr_exhaustion_pct": 85,
+      "ema_trail_buffer_pct": 0.5,
+      "stop_atr_multiplier": 2.0,
+      "stale_position_days": 3,
+      "stale_min_gain_pct": 2.0,
+      "cash_reserve_pct": 0.20,
+      "dca_aggressive_rsi": 20
+    },
+
+    "signal": {
+      "mean_reversion_oversold": {
+        "enabled": true,
+        "rsi_oversold": 38,
+        "rsi_oversold_bounds": [25, 40],
+        "bb_std": 2.0,
+        "bb_std_bounds": [1.5, 3.0]
+      },
+      "ema_crossover_bullish": {
+        "enabled": true,
+        "ema_fast": 9,
+        "ema_fast_bounds": [5, 15],
+        "ema_med": 21,
+        "ema_med_bounds": [15, 30],
+        "ema_long": 55,
+        "ema_long_bounds": [40, 80],
+        "vwap_slope_chop_threshold": 0.05,
+        "vwap_slope_chop_threshold_bounds": [0.01, 0.15]
+      },
+      "dca_technical_trigger": {
+        "enabled": true,
+        "dca_rsi_threshold": 35,
+        "dca_rsi_threshold_bounds": [30, 50],
+        "dca_aggressive_rsi": 20,
+        "rsi_oversold": 38,
+        "rsi_oversold_bounds": [25, 40]
+      },
+      "overbought_exit": {
+        "enabled": true,
+        "rsi_overbought": 65,
+        "rsi_overbought_bounds": [65, 80]
+      },
+      "volume_engulfing_bullish": {
+        "enabled": true,
+        "engulf_vol_multiplier": 1.5,
+        "engulf_vol_multiplier_bounds": [1.2, 2.5]
+      },
+      "body_momentum_bullish": {
+        "enabled": true,
+        "body_momentum_period": 5,
+        "body_momentum_period_bounds": [3, 10]
+      },
+      "borderline_dca": {
+        "enabled": true
+      },
+      "borderline_trend": {
+        "enabled": true,
+        "ema_trail_buffer_pct": 0.5,
+        "ema_trail_buffer_pct_bounds": [0.1, 2.0]
+      },
+      "bb_accumulation": {
+        "enabled": true
+      }
+    }
+  },
+  "crypto_strategy_15m": {
+    "enabled": true,
+    "position_size_usd": 500,
+    "position_size_bounds": [200, 1000],
+    "schedule": "Every 15 minutes, 24/7",
+    "shared": {
+      "bb_period": 20,
+      "rsi_period": 14,
+      "atr_period": 14,
+      "adx_period": 14,
+      "adx_ranging_threshold": 25,
+      "adx_trending_threshold": 25,
+      "ema_fast": 9,
+      "ema_med": 21,
+      "ema_long": 55,
+      "vwap_period": 24,
+      "vwap_slope_period": 5,
+      "body_momentum_period": 5,
+      "vwap_filter_enabled": true,
+      "adr_filter_enabled": false,
+      "ema_trail_enabled": true,
+      "stop_atr_multiplier": 1.5,
+      "stale_position_days": 1,
+      "stale_min_gain_pct": 1.0,
+      "cash_reserve_pct": 0.20
+    },
+    "signal": {
+      "mean_reversion_oversold": {
+        "enabled": true,
+        "rsi_oversold": 32,
+        "rsi_oversold_bounds": [25, 38],
+        "bb_std": 2.0,
+        "bb_std_bounds": [1.5, 3.0]
+      },
+      "ema_crossover_bullish": {
+        "enabled": true,
+        "ema_fast": 9,
+        "ema_fast_bounds": [5, 15],
+        "ema_med": 21,
+        "ema_med_bounds": [15, 30],
+        "ema_long": 55,
+        "ema_long_bounds": [40, 80],
+        "vwap_slope_chop_threshold": 0.08,
+        "vwap_slope_chop_threshold_bounds": [0.02, 0.20]
+      },
+      "dca_technical_trigger": {
+        "enabled": true,
+        "dca_rsi_threshold": 33,
+        "dca_rsi_threshold_bounds": [25, 42],
+        "dca_aggressive_rsi": 18,
+        "rsi_oversold": 32,
+        "rsi_oversold_bounds": [25, 38]
+      },
+      "overbought_exit": {
+        "enabled": true,
+        "rsi_overbought": 68,
+        "rsi_overbought_bounds": [62, 78]
+      },
+      "volume_engulfing_bullish": {
+        "enabled": true,
+        "engulf_vol_multiplier": 1.3,
+        "engulf_vol_multiplier_bounds": [1.1, 2.0]
+      },
+      "body_momentum_bullish": {
+        "enabled": true,
+        "body_momentum_period": 5,
+        "body_momentum_period_bounds": [3, 8]
+      },
+      "borderline_dca": { "enabled": true },
+      "borderline_trend": { "enabled": true },
+      "bb_accumulation": { "enabled": true }
+    }
   },
   "risk": {
     "max_position_pct_options": 5.0,
@@ -184,6 +315,8 @@
     "max_strategy_allocation_pct": 25.0,
     "cash_reserve_pct": 20.0,
     "max_drawdown_pct": 15.0,
-    "max_total_deployed_pct": 80.0
+    "emergency_recovery_buffer_pct": 3.0,
+    "max_total_deployed_pct": 80.0,
+    "risk_free_rate": 0.045
   }
 }

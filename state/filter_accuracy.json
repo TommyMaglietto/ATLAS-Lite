@@ -1,0 +1,19 @@
+{
+  "last_updated": "2026-04-14T10:25:42.125020+00:00",
+  "filters": {
+    "vwap_trend": {
+      "blocked": 114,
+      "would_have_won": 0,
+      "would_have_lost": 0,
+      "neutral": 15,
+      "accuracy": null
+    },
+    "vwap_slope_chop": {
+      "blocked": 85,
+      "would_have_won": 0,
+      "would_have_lost": 0,
+      "neutral": 0,
+      "accuracy": null
+    }
+  }
+}
