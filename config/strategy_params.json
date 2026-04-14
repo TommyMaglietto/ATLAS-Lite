@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "last_updated": "2026-04-14T22:00:03.114645+00:00",
+  "last_updated": "2026-04-14T22:17:59.743928+00:00",
   "trailing_stop": {
     "enabled": true,
     "loss_pct": 5.0,
@@ -247,7 +247,7 @@
       },
       "ema_crossover_bullish": {
         "enabled": true,
-        "ema_fast": 9,
+        "ema_fast": 8,
         "ema_fast_bounds": [
           5,
           15
