@@ -1263,6 +1263,7 @@ def main():
 
     # Extract watchlist for the for-loop iteration
     watchlist = params["watchlist"]
+    symbol_to_id = {sym: idx for idx, sym in enumerate(watchlist)}
 
     if not QUIET:
         print(f"Watchlist: {', '.join(watchlist)}")
@@ -1685,8 +1686,10 @@ def main():
                     timestamp=now.isoformat(),
                     cross_asset_data=btc_features,
                     signal_context=signal_context,
+                    symbol_id=symbol_to_id.get(sym, 0),
                 )
-                confidence = predict_confidence(ml_model, ml_features)
+                feature_mask = ml_metadata.get("_feature_mask") if ml_metadata else None
+                confidence = predict_confidence(ml_model, ml_features, feature_mask=feature_mask)
                 sig["ml_confidence"] = round(confidence, 4)
 
                 ml_threshold = params.get("shared", params).get("ml_confidence_threshold", 0.0)

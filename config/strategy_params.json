@@ -117,7 +117,21 @@
       "ATOM/USD",
       "FTM/USD",
       "OP/USD"
-    ]
+    ],
+    "ml_training": {
+      "days_back": 180,
+      "tp_atr_mult": 2.0,
+      "tp_atr_mult_bounds": [1.0, 4.0],
+      "sl_atr_mult": 2.0,
+      "sl_atr_mult_bounds": [1.0, 4.0],
+      "max_bars": 12,
+      "max_bars_bounds": [6, 24],
+      "boruta_max_iter": 100,
+      "purge_bars": 12,
+      "embargo_pct": 0.01,
+      "ensemble_enabled": true,
+      "min_samples_for_training": 30
+    }
   },
   "regime_filter": {
     "enabled": true,
