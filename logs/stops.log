@@ -204,3 +204,251 @@ SUMMARY
 [QUIET] 7 positions checked, 0 actions taken
   WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
 [QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** LINK/USD: $9.1676 <= $9.1709
+  SELL ORDER PLACED: LINK/USD qty=657.522602281 order_id=b7040c01-ce30-4ba4-92bb-3199422dc137
+  SOLD: LINK/USD qty=657.522602281 @ ~$9.1676 | PnL=$+229.65 (+4.07%)
+
+======================================================================
+SUMMARY
+  Sells executed:    1
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      6
+  Pending fills:     0
+  Total closed:      3
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: AMZN qty=4 order_id=e592910e-993d-460f-ad59-ad3016ae1a0b
+  PROFIT TAKE: AMZN +3.4% — selling 8% (4 units)
+  PARTIAL SELL ORDER PLACED: NVDA qty=4 order_id=d718b971-4443-443a-888f-fcb3d85d803a
+  PROFIT TAKE: NVDA +3.4% — selling 8% (4 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      2
+  Ladder buys:       0
+  Active stops:      6
+  Pending fills:     0
+  Total closed:      3
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** AAPL: $253.3750 <= $254.0353
+  SELL ORDER PLACED: AAPL qty=38.0 order_id=d66b7932-f295-4757-8e2c-7a9f773e31c3
+  SOLD: AAPL qty=38.0 @ ~$253.3750 | PnL=$-218.94 (-2.13%)
+
+======================================================================
+SUMMARY
+  Sells executed:    1
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      5
+  Pending fills:     0
+  Total closed:      4
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: BTC/USD qty=0.02803888 order_id=f3ca52c8-e3b5-483d-a703-bc9cb4a6b4b0
+  PROFIT TAKE: BTC/USD +3.2% — selling 8% (0.02803888 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      1
+  Ladder buys:       0
+  Active stops:      5
+  Pending fills:     0
+  Total closed:      4
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** ETH/USD: $2363.8830 <= $2366.9003
+  SELL ORDER PLACED: ETH/USD qty=9.376404603000001 order_id=4a475a4c-137b-452f-95e2-f97efc85828c
+  SOLD: ETH/USD qty=9.376404603000001 @ ~$2363.8830 | PnL=$+935.93 (+4.46%)
+
+======================================================================
+SUMMARY
+  Sells executed:    1
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      6
+  Pending fills:     0
+  Total closed:      5
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** SOL/USD: $85.9394 <= $85.9635
+  SELL ORDER PLACED: SOL/USD qty=80.033628869 order_id=f434d031-af52-49a4-bd2b-7bfc45a0978c
+  SOLD: SOL/USD qty=80.033628869 @ ~$85.9394 | PnL=$+282.50 (+4.37%)
+
+======================================================================
+SUMMARY
+  Sells executed:    1
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      5
+  Pending fills:     0
+  Total closed:      6
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** ADA/USD: $0.2442 <= $0.2453
+  SELL ORDER PLACED: ADA/USD qty=5979.460233462 order_id=c06a078f-7ace-44c6-847d-c0d8bc0f5a85
+  SOLD: ADA/USD qty=5979.460233462 @ ~$0.2442 | PnL=$-12.10 (-0.71%)
+  *** FLOOR BREACHED *** AVAX/USD: $9.3100 <= $9.3615
+  SELL ORDER PLACED: AVAX/USD qty=52.407333874 order_id=9ff4ab3f-40a8-442e-b581-3b8f82a67730
+  SOLD: AVAX/USD qty=52.407333874 @ ~$9.3100 | PnL=$-0.90 (-0.09%)
+
+======================================================================
+SUMMARY
+  Sells executed:    2
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      4
+  Pending fills:     0
+  Total closed:      8
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: AMZN qty=5 order_id=54f060c7-5dc0-437a-b36f-636210b8752a
+  PROFIT TAKE: AMZN +5.0% — selling 10% (5 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      1
+  Ladder buys:       0
+  Active stops:      6
+  Pending fills:     0
+  Total closed:      8
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 6 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 7 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** BTC/USD: $74347.1100 <= $74622.2536
+  SELL ORDER PLACED: BTC/USD qty=0.322447077 order_id=fb4bee1e-3cea-40d5-b96e-c2660519d7cc
+  SOLD: BTC/USD qty=0.322447077 @ ~$74347.1100 | PnL=$+381.55 (+1.65%)
+  *** FLOOR BREACHED *** ADA/USD: $0.2429 <= $0.2441
+  SELL ORDER PLACED: ADA/USD qty=30557.449336323 order_id=625632f8-9f1e-4413-8b36-1d7f38f1c1b0
+  SOLD: ADA/USD qty=30557.449336323 @ ~$0.2429 | PnL=$-80.46 (-0.94%)
+  *** FLOOR BREACHED *** ADA/USD: $0.2429 <= $0.2441
+  CIRCUIT BREAKER: 3 stops triggered in single run, pausing remaining
+
+======================================================================
+SUMMARY
+  Sells executed:    2
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      4
+  Pending fills:     0
+  Total closed:      10
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  *** FLOOR BREACHED *** ADA/USD: $0.2435 <= $0.2441
+  SELL ORDER PLACED: ADA/USD qty=7903.18022548 order_id=9a7437d7-12e6-43bf-bbe9-7cf9b7f2022a
+  SOLD: ADA/USD qty=7903.18022548 @ ~$0.2435 | PnL=$-14.54 (-0.62%)
+  *** FLOOR BREACHED *** AVAX/USD: $9.3553 <= $9.3867
+  SELL ORDER PLACED: AVAX/USD qty=393.243997127 order_id=9f28ea39-1489-4bda-ba0a-354af64584e3
+  SOLD: AVAX/USD qty=393.243997127 @ ~$9.3553 | PnL=$-16.52 (-0.17%)
+
+======================================================================
+SUMMARY
+  Sells executed:    2
+  Profit takes:      0
+  Ladder buys:       0
+  Active stops:      2
+  Pending fills:     0
+  Total closed:      12
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+  PARTIAL SELL ORDER PLACED: NVDA qty=4 order_id=22cbb40b-58d9-4395-a9e5-45edadf8cb4e
+  PROFIT TAKE: NVDA +5.2% — selling 10% (4 units)
+
+======================================================================
+SUMMARY
+  Sells executed:    0
+  Profit takes:      1
+  Ladder buys:       0
+  Active stops:      2
+  Pending fills:     0
+  Total closed:      12
+  State saved:       C:\Users\magli\Desktop\TradeEngine\state\trailing_stops.json
+======================================================================
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+  WARNING: configure_client_timeouts -- could not find httpx client on TradingClient; timeouts not applied
+[QUIET] 2 positions checked, 0 actions taken
+[QUIET] 2 positions checked, 0 actions taken
+[QUIET] 3 positions checked, 0 actions taken

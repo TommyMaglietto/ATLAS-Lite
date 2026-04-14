@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "last_updated": "2026-04-13T18:29:10.777480+00:00",
+  "last_updated": "2026-04-14T22:00:03.114645+00:00",
   "trailing_stop": {
     "enabled": true,
     "loss_pct": 5.0,
@@ -51,7 +51,7 @@
         "sell_pct": 25
       }
     ],
-    "full_close_after_tiers": 3,
+    "full_close_after_tiers": 2,
     "full_close_after_tiers_bounds": [
       2,
       5
@@ -64,7 +64,10 @@
     "learning_mode": true,
     "server_side_stops": true,
     "tf_4h_discount_factor": 0.5,
-    "tf_4h_discount_factor_bounds": [0.25, 1.0]
+    "tf_4h_discount_factor_bounds": [
+      0.25,
+      1.0
+    ]
   },
   "wheel": {
     "enabled": true,
@@ -124,11 +127,20 @@
     "ml_training": {
       "days_back": 180,
       "tp_atr_mult": 2.0,
-      "tp_atr_mult_bounds": [1.0, 4.0],
+      "tp_atr_mult_bounds": [
+        1.0,
+        4.0
+      ],
       "sl_atr_mult": 2.0,
-      "sl_atr_mult_bounds": [1.0, 4.0],
+      "sl_atr_mult_bounds": [
+        1.0,
+        4.0
+      ],
       "max_bars": 12,
-      "max_bars_bounds": [6, 24],
+      "max_bars_bounds": [
+        6,
+        24
+      ],
       "boruta_max_iter": 100,
       "purge_bars": 12,
       "embargo_pct": 0.01,

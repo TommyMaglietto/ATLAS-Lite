@@ -1,54 +1,18 @@
 {
   "schema_version": "1.0.0",
-  "last_reconciled": "2026-04-14T10:15:09.741712+00:00",
+  "last_reconciled": "2026-04-14T21:56:28.804492+00:00",
   "positions": [
-    {
-      "symbol": "AAPL",
-      "asset_class": "AssetClass.US_EQUITY",
-      "strategy": "TRAILING_STOP",
-      "qty": 38.0,
-      "entry_price": 258.883158,
-      "current_price": 259.02,
-      "market_value": 9842.76,
-      "cost_basis": 9837.560004,
-      "unrealized_pnl": 5.199996,
-      "opened_at": "2026-04-14T10:15:09.741662+00:00"
-    },
     {
       "symbol": "AMZN",
       "asset_class": "AssetClass.US_EQUITY",
       "strategy": "TRAILING_STOP",
-      "qty": 61.0,
+      "qty": 52.0,
       "entry_price": 237.539344,
-      "current_price": 241.6,
-      "market_value": 14737.6,
-      "cost_basis": 14489.899984,
-      "unrealized_pnl": 247.700016,
-      "opened_at": "2026-04-14T10:15:09.741677+00:00"
-    },
-    {
-      "symbol": "BTCUSD",
-      "asset_class": "AssetClass.CRYPTO",
-      "strategy": "TRAILING_STOP",
-      "qty": 0.350485957,
-      "entry_price": 72428.054151965,
-      "current_price": 74616.04,
-      "market_value": 26151.874187,
-      "cost_basis": 25385.015873,
-      "unrealized_pnl": 766.858314,
-      "opened_at": "2026-04-14T10:15:09.741683+00:00"
-    },
-    {
-      "symbol": "ETHUSD",
-      "asset_class": "AssetClass.CRYPTO",
-      "strategy": "TRAILING_STOP",
-      "qty": 9.376404603,
-      "entry_price": 2239.429751608,
-      "current_price": 2386.8,
-      "market_value": 22379.602506,
-      "cost_basis": 20997.799431,
-      "unrealized_pnl": 1381.803075,
-      "opened_at": "2026-04-14T10:15:09.741687+00:00"
+      "current_price": 248.69,
+      "market_value": 12931.88,
+      "cost_basis": 12352.045888,
+      "unrealized_pnl": 579.834112,
+      "opened_at": "2026-04-14T21:56:28.804456+00:00"
     },
     {
       "symbol": "GOOGL",
@@ -56,47 +20,23 @@
       "strategy": "TRAILING_STOP",
       "qty": 15.0,
       "entry_price": 316.377333,
-      "current_price": 324.87,
-      "market_value": 4873.05,
+      "current_price": 332.76,
+      "market_value": 4991.4,
       "cost_basis": 4745.659995,
-      "unrealized_pnl": 127.390005,
-      "opened_at": "2026-04-14T10:15:09.741691+00:00"
-    },
-    {
-      "symbol": "LINKUSD",
-      "asset_class": "AssetClass.CRYPTO",
-      "strategy": "TRAILING_STOP",
-      "qty": 657.522602281,
-      "entry_price": 8.809296579,
-      "current_price": 9.1908,
-      "market_value": 6043.158733,
-      "cost_basis": 5792.311611,
-      "unrealized_pnl": 250.847122,
-      "opened_at": "2026-04-14T10:15:09.741695+00:00"
+      "unrealized_pnl": 245.740005,
+      "opened_at": "2026-04-14T21:56:28.804475+00:00"
     },
     {
       "symbol": "NVDA",
       "asset_class": "AssetClass.US_EQUITY",
       "strategy": "TRAILING_STOP",
-      "qty": 53.0,
+      "qty": 45.0,
       "entry_price": 185.874717,
-      "current_price": 189.78,
-      "market_value": 10058.34,
-      "cost_basis": 9851.360001,
-      "unrealized_pnl": 206.979999,
-      "opened_at": "2026-04-14T10:15:09.741699+00:00"
-    },
-    {
-      "symbol": "SOLUSD",
-      "asset_class": "AssetClass.CRYPTO",
-      "strategy": "TRAILING_STOP",
-      "qty": 80.033628869,
-      "entry_price": 82.331089979,
-      "current_price": 86.36,
-      "market_value": 6911.704189,
-      "cost_basis": 6589.2559,
-      "unrealized_pnl": 322.448289,
-      "opened_at": "2026-04-14T10:15:09.741703+00:00"
+      "current_price": 195.81,
+      "market_value": 8811.45,
+      "cost_basis": 8364.362265,
+      "unrealized_pnl": 447.087735,
+      "opened_at": "2026-04-14T21:56:28.804482+00:00"
     }
   ],
   "pending_orders": [
@@ -138,11 +78,11 @@
     }
   ],
   "totals": {
-    "total_positions": 8,
+    "total_positions": 3,
     "total_pending": 3,
-    "total_value": 130665.98,
-    "cash_available": 2723.61,
-    "cash_reserved_pct": 2.6,
-    "deployed_pct": 97.4
+    "total_value": 56402.62,
+    "cash_available": 77144.95,
+    "cash_reserved_pct": 74.3,
+    "deployed_pct": 25.7
   }
 }

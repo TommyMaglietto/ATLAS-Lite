@@ -1,9 +1,9 @@
 {
-  "peak_equity": 104173.1,
-  "peak_date": "2026-04-13T23:35:42.102297+00:00",
+  "peak_equity": 104766.14,
+  "peak_date": "2026-04-14T14:35:39.962069+00:00",
   "emergency_mode": false,
   "emergency_triggered_at": null,
-  "current_drawdown_pct": 0.44,
+  "current_drawdown_pct": 0.85,
   "circuit_breaker_hit": false,
   "circuit_breaker_at": null
 }
