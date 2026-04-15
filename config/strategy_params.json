@@ -224,7 +224,7 @@
       "stale_position_days": 3,
       "stale_min_gain_pct": 2.0,
       "cash_reserve_pct": 0.2,
-      "ml_confidence_threshold": 0.0,
+      "ml_confidence_threshold": 0.5,
       "ml_confidence_threshold_bounds": [
         0.0,
         0.8
