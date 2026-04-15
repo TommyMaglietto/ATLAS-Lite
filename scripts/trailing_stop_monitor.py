@@ -48,7 +48,7 @@ SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 PAPER = True  # NEVER change this
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, StopOrderRequest
+from alpaca.trading.requests import MarketOrderRequest, StopOrderRequest, StopLimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
 from alpaca.data.requests import CryptoLatestQuoteRequest, StockLatestQuoteRequest, CryptoBarsRequest
@@ -471,6 +471,9 @@ def place_or_update_server_stop(stop, trading_client):
             pass  # Order may already be filled/cancelled
 
     # Place new stop order
+    # NOTE: Alpaca crypto only supports `stop_limit` (plain `stop` raises 40010001).
+    # We use StopLimitOrderRequest for crypto with a 2% slippage band below stop_price,
+    # and plain StopOrderRequest for equities.
     try:
         is_crypto_sym = "/" in symbol
         tif = TimeInForce.GTC
@@ -478,16 +481,30 @@ def place_or_update_server_stop(stop, trading_client):
         # Alpaca needs flat symbol for crypto orders (BTCUSD not BTC/USD)
         order_symbol = to_alpaca_position_symbol(symbol) if is_crypto_sym else symbol
 
-        # Round stop price: 2 decimals for equities, 6 for crypto
-        rounded_stop = round(floor_price, 6) if is_crypto_sym else round(floor_price, 2)
-
-        order_req = StopOrderRequest(
-            symbol=order_symbol,
-            qty=qty,
-            side=OrderSide.SELL,
-            stop_price=rounded_stop,
-            time_in_force=tif,
-        )
+        if is_crypto_sym:
+            # Crypto: stop_limit with 2% slippage cushion so the order actually fills
+            # during fast drops. limit_price floors what we'll accept; if price blows
+            # through, the limit rests and the 5-min poll-based sell backstops.
+            rounded_stop = round(floor_price, 6)
+            rounded_limit = round(floor_price * 0.98, 6)
+            order_req = StopLimitOrderRequest(
+                symbol=order_symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                stop_price=rounded_stop,
+                limit_price=rounded_limit,
+                time_in_force=tif,
+            )
+        else:
+            # Equity: plain stop order (market order triggered at stop_price)
+            rounded_stop = round(floor_price, 2)
+            order_req = StopOrderRequest(
+                symbol=order_symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                stop_price=rounded_stop,
+                time_in_force=tif,
+            )
         order = trading_client.submit_order(order_req)
         return str(order.id)
     except Exception as e:
