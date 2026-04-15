@@ -27,6 +27,9 @@ credentials.json
 *secret*
 *token*
 
+# ML training artifacts
+catboost_info/
+
 # Temporary files
 *.tmp
 *.bak

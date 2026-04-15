@@ -202,6 +202,75 @@ def process_trailing_stops() -> int:
 # 2.  Process copy-trade pending fills
 # ---------------------------------------------------------------------------
 
+def create_trailing_stop_for_fill(trade: dict, filled_price: float, filled_qty: float,
+                                   order_id: str, loss_pct: float) -> bool:
+    """Add a trailing-stop entry to trailing_stops.json for a newly-filled position.
+
+    This closes the V9 pipeline gap that caused GOOGL to sit unprotected: copy-trade
+    fills were marked FILLED but no trailing stop was ever created, so there was no
+    automated exit path. Now every copy-trade fill immediately gets a trail.
+
+    Guards against phantom stops: if the position has already been liquidated by
+    another process (happened when we retroactively processed stale PENDING_FILL
+    entries after an equity-close-all), we skip creating the stop.
+    """
+    symbol = trade.get("symbol", "???")
+    floor_price = round(filled_price * (1 - loss_pct / 100), 2)
+
+    # Confirm the position still exists on Alpaca before creating a stop for it
+    try:
+        pos = trading_client.get_open_position(symbol)
+        live_qty = float(pos.qty)
+        if live_qty <= 0:
+            print(f"    SKIP STOP: {symbol} has zero live balance — order filled but position closed")
+            return False
+    except Exception:
+        # get_open_position raises when position doesn't exist
+        print(f"    SKIP STOP: {symbol} — filled qty already liquidated (no current position)")
+        return False
+
+    new_stop = {
+        "symbol": symbol,
+        "asset_class": "equity",  # Copy-trades are always equities
+        "entry_order_id": order_id,
+        "qty": filled_qty,
+        "entry_price": filled_price,
+        "highest_price": filled_price,
+        "floor_price": floor_price,
+        "trail_pct": loss_pct,
+        "loss_pct": loss_pct,
+        "status": "ACTIVE",
+        "trailing_stop_order_id": None,
+        "opened_at": now_iso(),
+        "last_checked": now_iso(),
+        "strategy_source": "POLITICIAN_COPY",
+        "entry_signal_type": "copy_trade",
+        "timeframe": "1D",
+        "source_politician": trade.get("source_politician", ""),
+        "bipartisan": trade.get("bipartisan", False),
+    }
+
+    ts_data = atomic_read_json(str(TRAILING_STOPS_FILE))
+    if ts_data is None:
+        print(f"    WARNING: Could not read trailing_stops.json — stop NOT created for {symbol}")
+        return False
+
+    # De-dupe: if there's already an active stop for this symbol, don't create another.
+    for existing in ts_data.get("active_stops", []):
+        if existing.get("symbol") == symbol and existing.get("status") == "ACTIVE":
+            print(f"    SKIP STOP: {symbol} already has an active trailing stop")
+            return False
+
+    ts_data.setdefault("active_stops", []).append(new_stop)
+
+    if atomic_write_json(str(TRAILING_STOPS_FILE), ts_data):
+        print(f"    TRAILING STOP CREATED: {symbol} entry=${filled_price:.2f} "
+              f"floor=${floor_price:.2f} ({loss_pct}% trail)")
+        return True
+    print(f"    WARNING: atomic_write_json failed — trailing stop NOT persisted for {symbol}")
+    return False
+
+
 def process_copy_trades() -> int:
     """Check pending copy-trade orders, update state.  Returns count of changes."""
     print("\n=== Copy Trades ===")
@@ -209,6 +278,10 @@ def process_copy_trades() -> int:
     if ct_data is None:
         print("  ERROR: Could not read copy_trades.json")
         return 0
+
+    # Load loss_pct once for any fills we encounter
+    params = atomic_read_json(str(CONFIG_DIR / "strategy_params.json")) or {}
+    default_loss_pct = params.get("trailing_stop", {}).get("loss_pct", 5.0)
 
     changes = 0
     for trade in ct_data.get("replicated_trades", []):
@@ -261,6 +334,10 @@ def process_copy_trades() -> int:
                 "signal_type": "limit_order_fill",
                 "pnl": 0,
             })
+            # Create the trailing-stop entry so the position is automatically protected
+            create_trailing_stop_for_fill(
+                trade, filled_price, filled_qty, order_id, default_loss_pct
+            )
             changes += 1
 
         # --- CANCELLED / EXPIRED / REJECTED ---

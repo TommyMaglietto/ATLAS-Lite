@@ -342,28 +342,44 @@ def get_current_price(stop: dict) -> float | None:
 # Sell execution
 # ---------------------------------------------------------------------------
 def execute_sell(stop: dict) -> dict | None:
-    """Place a market sell order for the full position. Returns the order object or None."""
+    """Close the full position via Alpaca's close_position API.
+
+    Using close_position(symbol) instead of MarketOrderRequest(qty=...) avoids
+    the float-precision "insufficient balance" errors we hit on SHIB: our stored
+    qty has 6 decimals, Alpaca's balance has 9, so stored qty can exceed actual
+    available by a nanoscopic amount. close_position liquidates the full live
+    balance server-side, regardless of what we think we hold.
+
+    Falls back to MarketOrderRequest if close_position fails (position closed
+    elsewhere, etc.).
+    """
     symbol = stop["symbol"]
     qty = float(stop["qty"])
-
-    if is_crypto(stop):
-        time_in_force = TimeInForce.GTC
-    else:
-        time_in_force = TimeInForce.GTC
+    # Alpaca accepts both "BTC/USD" and "BTCUSD" for crypto position lookups
+    # but normalizes to flat. Use whatever get_open_position would return.
+    alpaca_symbol = to_alpaca_position_symbol(symbol) if is_crypto(stop) else symbol
 
     try:
-        order_req = MarketOrderRequest(
-            symbol=symbol,
-            qty=qty,
-            side=OrderSide.SELL,
-            time_in_force=time_in_force,
-        )
-        order = trading_client.submit_order(order_req)
-        print(f"  SELL ORDER PLACED: {symbol} qty={qty} order_id={order.id}")
+        order = trading_client.close_position(alpaca_symbol)
+        print(f"  SELL ORDER PLACED (close_position): {symbol} order_id={order.id}")
         return order
     except Exception as e:
-        print(f"  ERROR: Failed to place sell order for {symbol}: {e}")
-        return None
+        # Position may not exist, or close_position failed for another reason —
+        # fall back to a qty-bounded market order.
+        print(f"  close_position({symbol}) failed: {e} — falling back to MarketOrderRequest")
+        try:
+            order_req = MarketOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=TimeInForce.GTC,
+            )
+            order = trading_client.submit_order(order_req)
+            print(f"  SELL ORDER PLACED (fallback): {symbol} qty={qty} order_id={order.id}")
+            return order
+        except Exception as e2:
+            print(f"  ERROR: Failed to place sell order for {symbol}: {e2}")
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -1291,6 +1307,20 @@ def process_active_stops(active_stops: list, closed_stops: list, equity_market_o
                 stop["last_new_high_at"] = now_iso
 
         # --- Floor breach check ---
+        # Guard against corrupt state: a floor <= 0 combined with price ~0 will
+        # fire the breach every cycle and spin-loop on sub-penny assets (SHIB's
+        # "0.0000 <= 0.0000" bug). If we see this, drop the stop entirely — it
+        # was created from incomplete data and has no protective value.
+        if floor_price <= 0 or current_price <= 0:
+            if not QUIET:
+                print(f"  CORRUPT STOP: {symbol} floor=${floor_price} price=${current_price} — dropping entry")
+            closed_record = deepcopy(stop)
+            closed_record["status"] = "DROPPED_CORRUPT"
+            closed_record["closed_at"] = now_iso
+            closed_record["qty"] = 0
+            closed_stops.append(closed_record)
+            continue  # Skip remaining logic for this stop
+
         if current_price <= floor_price:
             print(f"  *** FLOOR BREACHED *** {symbol}: ${current_price:.4f} <= ${floor_price:.4f}")
 
