@@ -929,8 +929,58 @@ def log_blocked_signal(symbol, strategy, signal_type, filter_name, reason, indic
 # ORDER EXECUTION
 # ============================================================
 
+def _cancel_sell_stops_for_symbol(trading_client, symbol):
+    """Cancel all server-side sell stop/stop-limit orders for a symbol.
+
+    Alpaca rejects buys when a sell stop-limit exists for the same symbol
+    ('potential wash trade detected').  We cancel them before buying; the
+    trailing_stop_monitor re-creates them on its next 5-minute cycle.
+
+    Returns list of cancelled order IDs (for logging/debug).
+    """
+    cancelled = []
+    flat_symbol = symbol.replace("/", "")
+    try:
+        open_orders = trading_client.get_orders()
+        for o in open_orders:
+            if o.symbol == symbol or o.symbol == flat_symbol:
+                if str(o.side).lower().endswith("sell"):
+                    if "stop" in o.order_type.value.lower() or "limit" in o.order_type.value.lower():
+                        try:
+                            trading_client.cancel_order_by_id(str(o.id))
+                            cancelled.append(str(o.id))
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+    if cancelled:
+        # Clear the stale order ID from trailing_stops.json so the monitor
+        # re-creates the server stop with updated qty on its next run.
+        try:
+            from atomic_write import locked_read_modify_write
+            state_file = str(Path(__file__).resolve().parent.parent / "state" / "trailing_stops.json")
+            def clear_ids(state):
+                for stop in state.get("active_stops", []):
+                    if stop.get("trailing_stop_order_id") in cancelled:
+                        stop["trailing_stop_order_id"] = None
+                return state
+            locked_read_modify_write(state_file, clear_ids)
+        except Exception:
+            pass  # Non-fatal — monitor will detect stale ID on next check
+        print(f"    Cancelled {len(cancelled)} sell stop(s) for {symbol} (wash-trade prevention)")
+    return cancelled
+
+
 def place_crypto_buy(trading_client, symbol, notional_usd, strategy_name, signal):
-    """Place a fractional crypto market buy order."""
+    """Place a fractional crypto market buy order.
+
+    Cancels any existing server-side sell stop-limit orders for this symbol
+    first, because Alpaca rejects opposite-side orders as potential wash trades.
+    The trailing_stop_monitor re-creates the server stop on its next 5-min run.
+    """
+    # Cancel sell stops to avoid wash-trade rejection
+    _cancel_sell_stops_for_symbol(trading_client, symbol)
+
     try:
         order_request = MarketOrderRequest(
             symbol=symbol,

@@ -386,12 +386,27 @@ def execute_sell(stop: dict) -> dict | None:
 # Partial sell execution (for profit-taking)
 # ---------------------------------------------------------------------------
 def execute_partial_sell(stop: dict, sell_qty: float) -> dict | None:
-    """Place a market sell order for a partial position. Returns the order or None."""
+    """Place a market sell order for a partial position.
+
+    Server-side stop-limit orders reserve the full position qty on Alpaca,
+    leaving 'available' at 0. To execute a partial sell (profit-take) we must:
+      1. Cancel the server-side stop (frees qty)
+      2. Place the partial sell
+      3. Re-place the server stop with (original_qty - sold_qty)
+    If the partial sell fails, we still re-place the server stop so the
+    position stays protected.
+    """
     symbol = stop["symbol"]
     crypto = is_crypto(stop)
-
     time_in_force = TimeInForce.GTC if crypto else TimeInForce.DAY
 
+    # Step 1: temporarily lift the server stop so Alpaca frees the reserved qty
+    had_server_stop = bool(stop.get("trailing_stop_order_id"))
+    if had_server_stop:
+        cancel_server_stop(stop, trading_client)
+
+    # Step 2: place the partial sell
+    order = None
     try:
         order_req = MarketOrderRequest(
             symbol=symbol,
@@ -401,9 +416,19 @@ def execute_partial_sell(stop: dict, sell_qty: float) -> dict | None:
         )
         order = trading_client.submit_order(order_req)
         print(f"  PARTIAL SELL ORDER PLACED: {symbol} qty={sell_qty} order_id={order.id}")
-        return order
     except Exception as e:
         print(f"  ERROR: Failed to place partial sell for {symbol} qty={sell_qty}: {e}")
+
+    # Step 3: re-place server stop with remaining qty (even if sell failed)
+    if had_server_stop:
+        remaining_qty = float(stop.get("qty", 0)) - (sell_qty if order else 0)
+        if remaining_qty > 0:
+            # Build a temporary dict with the reduced qty for the server stop
+            stop_for_replace = dict(stop)
+            stop_for_replace["qty"] = remaining_qty
+            new_order_id = place_or_update_server_stop(stop_for_replace, trading_client)
+            if new_order_id:
+                stop["trailing_stop_order_id"] = new_order_id
         return None
 
 
