@@ -95,6 +95,16 @@ SIGNAL_PARAM_MAP = {
         "signal_key": "body_momentum_bullish",
         "params": ["body_momentum_period"],
     },
+    "break_of_structure": {
+        "section": "crypto_strategy",
+        "signal_key": "break_of_structure",
+        "params": ["bos_lookback", "bos_confirmation_bars", "bos_atr_filter"],
+    },
+    "swing_failure_pattern": {
+        "section": "crypto_strategy",
+        "signal_key": "swing_failure_pattern",
+        "params": ["sfp_lookback", "sfp_wick_min_pct"],
+    },
 }
 
 # Inject _weight as a tunable param for every signal type (Phase 4: Adaptive Weights)
@@ -115,6 +125,8 @@ EXPERIMENT_SLOTS = {
     "crypto.volume_engulfing_bullish": ["volume_engulfing_bullish"],
     "crypto.body_momentum_bullish": ["body_momentum_bullish"],
     "crypto.overbought_exit": ["overbought_exit"],
+    "crypto.break_of_structure": ["break_of_structure"],
+    "crypto.swing_failure_pattern": ["swing_failure_pattern"],
     # Per-signal slots for 15-minute crypto (6 parallel fast-cycling experiments)
     "crypto.15m.mean_reversion_oversold": ["mean_reversion_oversold_15m"],
     "crypto.15m.ema_crossover_bullish": ["ema_crossover_bullish_15m"],
@@ -122,6 +134,8 @@ EXPERIMENT_SLOTS = {
     "crypto.15m.volume_engulfing_bullish": ["volume_engulfing_bullish_15m"],
     "crypto.15m.body_momentum_bullish": ["body_momentum_bullish_15m"],
     "crypto.15m.overbought_exit": ["overbought_exit_15m"],
+    "crypto.15m.break_of_structure": ["break_of_structure_15m"],
+    "crypto.15m.swing_failure_pattern": ["swing_failure_pattern_15m"],
 }
 
 # 15-minute signal param map (points to crypto_strategy_15m config section)
@@ -155,6 +169,16 @@ SIGNAL_PARAM_MAP_15M = {
         "section": "crypto_strategy_15m",
         "signal_key": "overbought_exit",
         "params": ["rsi_overbought"],
+    },
+    "break_of_structure_15m": {
+        "section": "crypto_strategy_15m",
+        "signal_key": "break_of_structure",
+        "params": ["bos_lookback", "bos_confirmation_bars", "bos_atr_filter"],
+    },
+    "swing_failure_pattern_15m": {
+        "section": "crypto_strategy_15m",
+        "signal_key": "swing_failure_pattern",
+        "params": ["sfp_lookback", "sfp_wick_min_pct"],
     },
 }
 
@@ -193,6 +217,12 @@ DEFAULT_BOUNDS = {
     "engulf_vol_multiplier": (1.2, 2.5),
     "body_momentum_period": (3, 10),
     "ema_trail_buffer_pct": (0.1, 2.0),
+    # BOS + SFP signal params (V11)
+    "bos_lookback": (5, 20),
+    "bos_confirmation_bars": (1, 3),
+    "bos_atr_filter": (0.2, 1.5),
+    "sfp_lookback": (10, 30),
+    "sfp_wick_min_pct": (0.1, 1.0),
     "_weight": (0.0, 2.0),
 }
 

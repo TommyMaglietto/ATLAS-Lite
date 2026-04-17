@@ -34,7 +34,7 @@ LOGS_DIR = PROJECT_ROOT / "logs"
 from atomic_write import atomic_write_json, atomic_read_json
 
 # ---------------------------------------------------------------------------
-# Feature definition -- 21-element feature vector
+# Feature definition -- 24-element feature vector
 # ---------------------------------------------------------------------------
 FEATURE_NAMES = [
     # Core (6)
@@ -47,11 +47,15 @@ FEATURE_NAMES = [
     "hour_of_day", "day_of_week",
     # MACD (3) -- momentum oscillator, research top feature
     "macd", "macd_signal", "macd_histogram",
-    # External data (1) -- Binance funding rate, reversal predictor
+    # External data (1) -- CoinGecko funding rate, reversal predictor
     "funding_rate",
     # Symbol identifier (1) -- integer-encoded symbol for per-asset bias
     "symbol_id",
-    # Total: 21 features
+    # Derivatives / liquidation data (3) -- CoinGecko, V11 addition
+    "open_interest_change_pct",      # OI % change over last fetch interval (4h)
+    "long_short_ratio",              # L/S account ratio proxy (funding sign/magnitude)
+    "btc_open_interest_change_pct",  # BTC OI change (cross-asset stress indicator)
+    # Total: 24 features
 ]
 
 MODEL_PATH = STATE_DIR / "ml_model.joblib"
@@ -69,7 +73,7 @@ SLIPPAGE = 0.001
 def extract_features(indicators, symbol, timestamp=None, cross_asset_data=None,
                      signal_context=None, symbol_id=None):
     """
-    Build 21-feature vector from a live signal's indicators dict.
+    Build 24-feature vector from a live signal's indicators dict.
 
     Args:
         indicators: dict with keys from generate_signals (rsi, adx, bb_position,
@@ -86,7 +90,7 @@ def extract_features(indicators, symbol, timestamp=None, cross_asset_data=None,
         symbol_id: integer-encoded symbol identifier, or None.
 
     Returns:
-        np.ndarray of shape (21,) with np.nan for unavailable values.
+        np.ndarray of shape (24,) with np.nan for unavailable values.
     """
     features = np.full(len(FEATURE_NAMES), np.nan)
 
@@ -148,6 +152,17 @@ def extract_features(indicators, symbol, timestamp=None, cross_asset_data=None,
     # --- Symbol ID (index 20) ---
     if symbol_id is not None:
         features[20] = float(symbol_id)
+
+    # --- Derivatives / liquidation data (indices 21-23) ---
+    features[21] = _safe(indicators.get("open_interest_change_pct"))
+    features[22] = _safe(indicators.get("funding_rate"))  # L/S proxy (sign = direction, magnitude = imbalance)
+    # BTC OI change: from cross-asset for altcoins, from indicators for BTC itself
+    if is_btc:
+        features[23] = _safe(indicators.get("open_interest_change_pct"))
+    elif cross_asset_data is not None:
+        features[23] = _safe(cross_asset_data.get("btc_oi_change_pct"))
+    else:
+        features[23] = _safe(indicators.get("btc_open_interest_change_pct"))
 
     return features
 
@@ -237,12 +252,17 @@ def extract_features_from_dataframe(df, bar_idx, symbol, cross_asset_df=None,
     features[17] = _safe("macd_signal")
     features[18] = _safe("macd_histogram")
 
-    # --- Funding rate (19) --- NaN in backtest (only available live from Binance)
+    # --- Funding rate (19) --- NaN in backtest (only available live from CoinGecko)
     features[19] = _safe("funding_rate")
 
     # --- Symbol ID (20) ---
     if symbol_id is not None:
         features[20] = float(symbol_id)
+
+    # --- Derivatives / liquidation data (21-23) --- NaN in backtest (live-only)
+    features[21] = np.nan  # open_interest_change_pct (live only)
+    features[22] = np.nan  # long_short_ratio / funding proxy (live only)
+    features[23] = np.nan  # btc_open_interest_change_pct (live only)
 
     return features
 

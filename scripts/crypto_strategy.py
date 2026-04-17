@@ -472,29 +472,108 @@ _BINANCE_SYMBOL_MAP = {
     "SHIB": "1000SHIBUSDT",  # Binance uses 1000SHIB for perpetuals
 }
 
+# OI cache file for computing OI change % over time
+_OI_CACHE_FILE = STATE_DIR / "oi_cache.json"
+
+
+def fetch_derivatives_data(symbols, timeout=10):
+    """Fetch derivatives data from CoinGecko (free, no auth, no geo-block).
+
+    Single API call returns ALL perpetual contracts: funding rate, open interest,
+    24h futures volume. Replaces the broken Binance Futures API (451 geo-blocked).
+
+    Returns dict[symbol] -> {
+        "funding_rate": float,          # 8-hour funding rate (+ = longs pay)
+        "open_interest": float,         # Total OI in USD
+        "futures_volume_24h": float,    # 24h futures volume
+    }
+    """
+    result = {}
+    try:
+        resp = _http.get("https://api.coingecko.com/api/v3/derivatives", timeout=timeout)
+        if resp.status_code != 200:
+            return {s: {"funding_rate": None, "open_interest": None, "futures_volume_24h": None} for s in symbols}
+        data = resp.json()
+
+        # Build lookup: base symbol -> first matching perpetual contract
+        # CoinGecko returns many contracts; we pick the one with highest OI per base
+        best_by_base = {}
+        for d in data:
+            if d.get("contract_type") != "perpetual":
+                continue
+            idx = d.get("index_id", "")
+            oi = float(d.get("open_interest") or 0)
+            if idx not in best_by_base or oi > best_by_base[idx].get("_oi", 0):
+                best_by_base[idx] = {
+                    "funding_rate": float(d.get("funding_rate") or 0) / 100,  # CoinGecko returns %, normalize
+                    "open_interest": oi,
+                    "futures_volume_24h": float(d.get("volume_24h") or 0),
+                    "_oi": oi,
+                }
+
+        for symbol in symbols:
+            base = symbol.split("/")[0]
+            entry = best_by_base.get(base)
+            if entry:
+                result[symbol] = {
+                    "funding_rate": entry["funding_rate"],
+                    "open_interest": entry["open_interest"],
+                    "futures_volume_24h": entry["futures_volume_24h"],
+                }
+            else:
+                result[symbol] = {"funding_rate": None, "open_interest": None, "futures_volume_24h": None}
+    except Exception as e:
+        if not QUIET:
+            print(f"  WARNING: fetch_derivatives_data failed: {e}")
+        result = {s: {"funding_rate": None, "open_interest": None, "futures_volume_24h": None} for s in symbols}
+    return result
+
+
+def compute_oi_changes(derivatives_data):
+    """Compute OI % change from cached values. Updates the cache.
+
+    Returns dict[symbol] -> float (% change), or None if no previous cache.
+    The first call seeds the cache; change data starts on the second call.
+    """
+    changes = {}
+    # Load previous cache
+    prev_cache = {}
+    try:
+        if _OI_CACHE_FILE.exists():
+            with open(_OI_CACHE_FILE, "r") as f:
+                prev_cache = json.load(f)
+    except Exception:
+        pass
+
+    new_cache = {}
+    for symbol, ddata in derivatives_data.items():
+        oi = ddata.get("open_interest")
+        if oi and oi > 0:
+            new_cache[symbol] = oi
+            prev_oi = prev_cache.get(symbol)
+            if prev_oi and prev_oi > 0:
+                changes[symbol] = (oi - prev_oi) / prev_oi * 100
+            else:
+                changes[symbol] = None  # No previous data
+        else:
+            changes[symbol] = None
+
+    # Save updated cache
+    try:
+        _OI_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_OI_CACHE_FILE, "w") as f:
+            json.dump(new_cache, f)
+    except Exception:
+        pass
+
+    return changes
+
 
 def fetch_funding_rates(symbols, timeout=5):
-    """Fetch latest funding rates from Binance Futures API (free, no auth).
+    """Legacy wrapper — now delegates to fetch_derivatives_data().
     Returns dict mapping symbol -> float funding rate, or None for failures."""
-    rates = {}
-    for symbol in symbols:
-        base = symbol.split("/")[0]
-        binance_sym = _BINANCE_SYMBOL_MAP.get(base, f"{base}USDT")
-        try:
-            resp = _http.get(
-                "https://fapi.binance.com/fapi/v1/fundingRate",
-                params={"symbol": binance_sym, "limit": 1},
-                timeout=timeout,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if data and len(data) > 0:
-                    rates[symbol] = float(data[0]["fundingRate"])
-                    continue
-        except Exception:
-            pass
-        rates[symbol] = None
-    return rates
+    deriv = fetch_derivatives_data(symbols, timeout=timeout)
+    return {sym: d.get("funding_rate") for sym, d in deriv.items()}
 
 
 def compute_indicators(df, params):
@@ -848,6 +927,89 @@ def generate_signals(df, symbol, params, dry_run=False, existing_positions=None)
                 "reason": f"Bullish body momentum crossover (bull={bull_body_sum:.2f} > bear={bear_body_sum:.2f}), price > EMA55",
                 "indicators": indicators,
             })
+
+    # --- Signal 7: Break of Structure (BOS) BUY ---
+    # Bullish BOS: price closes above the most recent confirmed swing high (higher high)
+    bos_p = _get_signal_params(params, "break_of_structure")
+    if bos_p.get("enabled", True) and len(df) > 30:
+        bos_lookback = bos_p.get("bos_lookback", 10)
+        bos_confirm = bos_p.get("bos_confirmation_bars", 2)
+        bos_atr_filter = bos_p.get("bos_atr_filter", 0.5)
+        atr_pct_val = float(latest.get("atr_pct", 0))
+
+        # Only fire if ATR is significant (filters noise in flat markets)
+        if atr_pct_val >= bos_atr_filter:
+            # Find the most recent swing high: bar whose high is the highest
+            # in [i-bos_lookback, i], confirmed bos_confirm bars ago
+            search_start = max(0, len(df) - bos_lookback * 3)
+            search_end = len(df) - bos_confirm  # Must be confirmed (not the current bar)
+            swing_high_price = None
+            for i in range(search_end - 1, search_start, -1):
+                window_start = max(0, i - bos_lookback)
+                window_end = min(len(df), i + bos_lookback + 1)
+                bar_high = float(df.iloc[i]["high"])
+                window_max = float(df.iloc[window_start:window_end]["high"].max())
+                if bar_high >= window_max:
+                    swing_high_price = bar_high
+                    break  # Found most recent swing high
+
+            if swing_high_price and price > swing_high_price and above_vwap:
+                signals.append({
+                    "symbol": symbol,
+                    "strategy": "CRYPTO_TREND",
+                    "action": "BUY",
+                    "signal_type": "break_of_structure",
+                    "strength": "STRONG" if is_trending else "MODERATE",
+                    "reason": f"BOS: price ${price:.2f} broke above swing high ${swing_high_price:.2f}, ATR%={atr_pct_val:.2f}",
+                    "indicators": indicators,
+                })
+
+    # --- Signal 8: Swing Failure Pattern (SFP) BUY ---
+    # Bullish SFP: current bar wicks below previous swing low but closes above it
+    # This is a bear trap — shorts get caught, price reverses up
+    sfp_p = _get_signal_params(params, "swing_failure_pattern")
+    if sfp_p.get("enabled", True) and len(df) > 30:
+        sfp_lookback = sfp_p.get("sfp_lookback", 15)
+        sfp_wick_min = sfp_p.get("sfp_wick_min_pct", 0.3)
+        sfp_vol_confirm = sfp_p.get("sfp_volume_confirm", True)
+
+        # Find the most recent swing low
+        search_start = max(0, len(df) - sfp_lookback * 3)
+        search_end = len(df) - 2  # Must be a previous swing, not current bar
+        swing_low_price = None
+        for i in range(search_end - 1, search_start, -1):
+            window_start = max(0, i - sfp_lookback)
+            window_end = min(len(df), i + sfp_lookback + 1)
+            bar_low = float(df.iloc[i]["low"])
+            window_min = float(df.iloc[window_start:window_end]["low"].min())
+            if bar_low <= window_min:
+                swing_low_price = bar_low
+                break
+
+        if swing_low_price:
+            cur_low = float(latest["low"])
+            cur_close = price
+            wick_below = swing_low_price - cur_low
+            wick_pct = (wick_below / swing_low_price * 100) if swing_low_price > 0 else 0
+
+            # Conditions: wicked below swing low, closed above it, wick is meaningful
+            if cur_low < swing_low_price and cur_close > swing_low_price and wick_pct >= sfp_wick_min:
+                vol_ok = True
+                if sfp_vol_confirm:
+                    vol_avg = float(df["volume"].iloc[-6:-1].mean()) if len(df) > 5 else 0
+                    cur_vol = float(latest.get("volume", 0))
+                    vol_ok = cur_vol > vol_avg * 1.2 if vol_avg > 0 else True
+
+                if vol_ok:
+                    signals.append({
+                        "symbol": symbol,
+                        "strategy": "CRYPTO_MEAN_REVERSION",
+                        "action": "BUY",
+                        "signal_type": "swing_failure_pattern",
+                        "strength": "STRONG",
+                        "reason": f"SFP: wicked below swing low ${swing_low_price:.2f} (wick {wick_pct:.1f}%) but closed above at ${cur_close:.2f}",
+                        "indicators": indicators,
+                    })
 
     # --- Borderline signals: lean toward trading ---
     # If no buy signals yet, check for near-signals
@@ -1501,18 +1663,26 @@ def main():
         print("\nFATAL: No data fetched. Exiting.")
         return
 
-    # ---- Fetch Binance funding rates ----
+    # ---- Fetch derivatives data (CoinGecko: funding rate + OI + futures volume) ----
+    derivatives_data = {}
     funding_rates = {}
+    oi_changes = {}
     try:
         if not QUIET:
-            print("\n[2.7/6] Fetching Binance funding rates...")
-        funding_rates = fetch_funding_rates(watchlist)
+            print("\n[2.7/6] Fetching derivatives data (CoinGecko)...")
+        derivatives_data = fetch_derivatives_data(watchlist)
+        # Extract funding rates for backward compatibility
+        funding_rates = {sym: d.get("funding_rate") for sym, d in derivatives_data.items()}
+        # Compute OI % changes from cached values
+        oi_changes = compute_oi_changes(derivatives_data)
         if not QUIET:
             funded = {k: v for k, v in funding_rates.items() if v is not None}
-            print(f"  Rates: {len(funded)}/{len(watchlist)} symbols")
+            oi_valid = {k: v for k, v in oi_changes.items() if v is not None}
+            print(f"  Funding rates: {len(funded)}/{len(watchlist)} symbols")
+            print(f"  OI changes: {len(oi_valid)}/{len(watchlist)} symbols")
     except Exception as e:
         if not QUIET:
-            print(f"  Funding rate fetch failed: {e}")
+            print(f"  Derivatives data fetch failed: {e}")
 
     # ---- Cross-asset intelligence: BTC features for altcoin signals ----
     btc_features = None
@@ -1528,6 +1698,7 @@ def main():
                     "btc_adx": round(float(btc_latest.get("adx", np.nan)), 2) if not np.isnan(btc_latest.get("adx", np.nan)) else None,
                     "btc_vwap_slope": round(float(btc_latest.get("vwap_slope", np.nan)), 4) if not np.isnan(btc_latest.get("vwap_slope", np.nan)) else None,
                     "btc_ema_alignment": round((float(btc_latest.get("ema9", 0)) - float(btc_latest.get("ema55", 0))) / btc_close * 100, 4),
+                    "btc_oi_change_pct": oi_changes.get("BTC/USD"),
                 }
                 if not QUIET:
                     print(f"\n  BTC cross-asset: RSI={btc_features['btc_rsi']}, ADX={btc_features['btc_adx']}")
@@ -1629,9 +1800,16 @@ def main():
             for s in sigs_15m:
                 s["timeframe"] = "15M"
                 s["signal_type"] = s.get("signal_type", "") + "_15m"  # Tag as 15-min signal
+                ind = s.setdefault("indicators", {})
                 fr = funding_rates.get(symbol)
                 if fr is not None:
-                    s.setdefault("indicators", {})["funding_rate"] = round(fr, 8)
+                    ind["funding_rate"] = round(fr, 8)
+                oi_ch = oi_changes.get(symbol)
+                if oi_ch is not None:
+                    ind["open_interest_change_pct"] = round(oi_ch, 4)
+                btc_oi = oi_changes.get("BTC/USD") if symbol != "BTC/USD" else oi_ch
+                if btc_oi is not None:
+                    ind["btc_open_interest_change_pct"] = round(btc_oi, 4)
             all_signals.extend(sigs_15m)
             if not QUIET:
                 for s in sigs_15m:
@@ -1646,9 +1824,16 @@ def main():
             sigs = generate_signals(all_data[key_1h], symbol, params)
             for s in sigs:
                 s["timeframe"] = "1H"
+                ind = s.setdefault("indicators", {})
                 fr = funding_rates.get(symbol)
                 if fr is not None:
-                    s.setdefault("indicators", {})["funding_rate"] = round(fr, 8)
+                    ind["funding_rate"] = round(fr, 8)
+                oi_ch = oi_changes.get(symbol)
+                if oi_ch is not None:
+                    ind["open_interest_change_pct"] = round(oi_ch, 4)
+                btc_oi = oi_changes.get("BTC/USD") if symbol != "BTC/USD" else oi_ch
+                if btc_oi is not None:
+                    ind["btc_open_interest_change_pct"] = round(btc_oi, 4)
             all_signals.extend(sigs)
             if not QUIET:
                 if sigs:
@@ -1663,9 +1848,16 @@ def main():
             trend_sigs = [s for s in sigs_4h if "TREND" in s.get("strategy", "")]
             for s in trend_sigs:
                 s["timeframe"] = "4H"
+                ind = s.setdefault("indicators", {})
                 fr = funding_rates.get(symbol)
                 if fr is not None:
-                    s.setdefault("indicators", {})["funding_rate"] = round(fr, 8)
+                    ind["funding_rate"] = round(fr, 8)
+                oi_ch = oi_changes.get(symbol)
+                if oi_ch is not None:
+                    ind["open_interest_change_pct"] = round(oi_ch, 4)
+                btc_oi = oi_changes.get("BTC/USD") if symbol != "BTC/USD" else oi_ch
+                if btc_oi is not None:
+                    ind["btc_open_interest_change_pct"] = round(btc_oi, 4)
             # Avoid duplicate trend signals if already generated on 1H
             existing_trend = any(
                 s["symbol"] == symbol and "TREND" in s["strategy"] and s["action"] == "BUY"
